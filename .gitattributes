@@ -1,0 +1,12 @@
+# Normalise line endings so that `npm run format:check` produces the same
+# result on Windows, macOS and CI. Prettier writes LF; without this, Git's
+# autocrlf on Windows would rewrite files and fail the check.
+* text=auto eol=lf
+
+# Binary assets must never be normalised.
+*.ico binary
+*.png binary
+*.jpg binary
+*.webp binary
+*.woff binary
+*.woff2 binary

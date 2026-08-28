@@ -470,11 +470,12 @@ When sources conflict, use this priority:
 
 1. Current code behavior
 2. Explicit user instruction
-3. `docs/IMPLEMENTATION.md`
-4. `docs/ARCHITECTURE.md`
-5. `docs/SCORING.md`
-6. `docs/DECISIONS.md`
-7. Claude's assumptions
+3. `CLAUDE.md`
+4. `docs/IMPLEMENTATION.md`
+5. `docs/ARCHITECTURE.md`
+6. `docs/SCORING.md`
+7. `docs/DECISIONS.md`
+8. Claude's assumptions
 
 When an explicit user instruction conflicts with documentation, follow the user instruction and update the documentation.
 

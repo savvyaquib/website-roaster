@@ -1,0 +1,12 @@
+.next/
+node_modules/
+coverage/
+out/
+build/
+package-lock.json
+next-env.d.ts
+public/
+
+# Markdown is hand-authored specification prose (and contains hand-drawn
+# diagrams). Prettier reflows both, which creates review churn for no gain.
+*.md
