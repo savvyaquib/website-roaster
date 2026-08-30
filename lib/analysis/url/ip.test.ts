@@ -174,6 +174,24 @@ describe("classifyIpLiteral", () => {
     expect(classifyIpLiteral("[::1]")).toEqual({ kind: "ip", reason: "loopback" });
   });
 
+  it("classifies a bare IPv6 address, as a DNS resolver returns it", () => {
+    // Phase 2 passes resolved addresses through here, and those arrive without
+    // brackets. Treating them as "not an IP" would refuse every IPv6-only site.
+    expect(classifyIpLiteral("::1")).toEqual({ kind: "ip", reason: "loopback" });
+    expect(classifyIpLiteral("fe80::1")).toEqual({ kind: "ip", reason: "link_local" });
+    expect(classifyIpLiteral("2606:4700:4700::1111")).toEqual({
+      kind: "ip",
+      reason: null,
+    });
+  });
+
+  it("refuses something that looks like IPv6 but does not parse", () => {
+    expect(classifyIpLiteral("::gg::1")).toEqual({
+      kind: "ip",
+      reason: "reserved_address",
+    });
+  });
+
   it("allows a public IPv4 host", () => {
     expect(classifyIpLiteral("93.184.216.34")).toEqual({ kind: "ip", reason: null });
   });

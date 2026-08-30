@@ -1197,6 +1197,123 @@ controls (Phase 20) make the scanning concern manageable by other means.
 
 ---
 
+# ADR-040 — HTTP Retrieval Model and Budgets
+
+## Status
+
+Accepted
+
+## Decision
+
+### The client is `node:http` / `node:https`, not `fetch`
+
+Three Phase 2 requirements are not expressible through `fetch`:
+
+- **pinning the connection to a pre-validated address**, which needs the
+  `lookup` option (ADR-041);
+- **following redirects manually**, so every hop can be re-validated (ADR-035);
+- **aborting a response mid-stream** once it exceeds the size budget.
+
+`node:http` supports all three and is already in the platform, so no dependency
+is added (ADR-023).
+
+Connection pooling is disabled (`agent: false`). Each analysis opens a fresh,
+separately validated connection, and timings are not skewed by a reused socket.
+
+### Only HTML bodies are downloaded
+
+If the response is not `text/html` or `application/xhtml+xml`, the body is not
+read: the analyzer has no use for the bytes of a PDF or a video, and streaming
+one would consume the size budget for nothing.
+
+Metadata is still reported — status, headers, content type, and the
+`Content-Length` the server declared. Observed size is reported as `null`,
+meaning "not measured" rather than "zero" (ADR-021).
+
+### Compressed responses are decompressed
+
+The analyzer advertises `gzip, deflate, br` and decodes the response, recording
+**both** sizes:
+
+- `transferredBytes` — what crossed the wire;
+- `decodedBytes` — the size after decompression.
+
+Keeping both matters. The pair is the raw evidence for the compression findings
+in Phases 6 and 8, and discarding either would violate ADR-012. Requesting
+`identity` instead was considered and rejected: many servers and CDNs compress
+regardless, and the body would then be unreadable.
+
+### Budgets
+
+| Budget | Default | Applies to |
+| --- | --- | --- |
+| Total time | 15s | The whole chain, including every redirect |
+| Response size | 5 MiB | Transferred **and** decoded bytes, separately |
+| Redirects | 5 | Hops followed before giving up |
+
+The time budget covers the whole chain rather than each request, so a site
+cannot extend its own deadline by redirecting.
+
+The size budget is applied to the decoded stream as well as the transferred one.
+That second check is the decompression-bomb guard: a few kilobytes of gzip can
+expand to gigabytes, and a transferred-bytes cap alone would not notice.
+
+## Consequences
+
+- A legitimate page larger than 5 MiB is refused. This is reported explicitly as
+  `response_too_large`, not as a generic failure.
+- An HTML page served with a wrong content type is treated as non-HTML and its
+  body is not analyzed. Sniffing the body to second-guess the server is
+  deliberately not done at this stage.
+
+---
+
+# ADR-041 — Every Resolved Address Must Pass
+
+## Status
+
+Accepted
+
+## Context
+
+Phase 1 can only judge the URL string. The address behind a hostname is unknown
+until it is resolved, and an attacker controls the DNS for their own domain.
+
+Two attacks follow: a public name with an `A` record pointing at
+`169.254.169.254`, and DNS rebinding, where the name resolves to a public
+address when checked and a private one when the socket connects.
+
+## Decision
+
+1. **Resolve once, then pin.** The analyzer resolves the hostname itself,
+   validates the result, and hands the socket a single validated **address**.
+   There is no second resolution for an attacker to poison. The `Host` header
+   and TLS server name still carry the hostname, so virtual hosting and
+   certificate verification are unaffected.
+
+2. **All addresses must pass, not just the one we pick.** If a hostname resolves
+   to several addresses and *any* of them is disallowed, the whole connection is
+   refused.
+
+The obvious alternative — filter the disallowed addresses out and connect to a
+surviving public one — was rejected. It lets a hostile resolver decide which
+address we eventually reach, and a name resolving to both a public and a private
+address is either misconfigured or hostile. Neither deserves a request.
+
+3. **Address validation reuses the Phase 1 classifier.** There is exactly one
+   definition of "an address we refuse to contact" in the codebase, so a range
+   added for the URL layer is automatically enforced for resolved addresses too.
+
+## Consequences
+
+- A name behind round-robin DNS that mixes public and private addresses cannot
+  be analyzed. This is rare and the refusal is explicit.
+- The security policy is an injectable interface, so tests can point the
+  analyzer at a local server. The production default is strict and the shipped
+  code contains no bypass; a test that needs loopback defines its own policy.
+
+---
+
 # CHANGE LOG
 
 ## Initial version
@@ -1228,6 +1345,22 @@ Both were forced by implementing Phase 1 and are recorded rather than assumed:
   refused with an actionable code instead of being silently upgraded to https.
 - ADR-039 restricted analysis to the default ports, so the tool cannot be used
   to port-scan a third party.
+
+## Phase 2 — Basic HTTP Analyzer
+
+Added ADR-040 and ADR-041.
+
+- ADR-040 recorded the retrieval model: `node:http` rather than `fetch` (three
+  requirements `fetch` cannot express), HTML-only body downloads, decompression
+  with both sizes retained, and the time/size/redirect budgets.
+- ADR-041 recorded the DNS-rebinding defence: resolve once, pin the connection
+  to a validated address, and refuse the connection if *any* resolved address
+  is disallowed.
+
+Also fixed a Phase 1 defect found while implementing this phase:
+`classifyIpLiteral` recognised IPv6 only in its bracketed form, so a bare
+address from a DNS resolver was classified as "not an IP address". Left
+unfixed it would have refused every IPv6-only site.
 
 New decisions are appended immediately above this section, using the form:
 

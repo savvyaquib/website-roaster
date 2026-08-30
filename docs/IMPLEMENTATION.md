@@ -800,7 +800,8 @@ For each phase:
 ```text
 Phase 0 — ✅ Complete
 Phase 1 — ✅ Complete
-Phase 2 — ⏳ Not started
+Phase 2 — ✅ Complete
+Phase 3 — ⏳ Not started
 ...
 ```
 
@@ -856,6 +857,46 @@ Not delivered, deliberately:
 
 - no DNS resolution, no address pinning, no redirect following — Phase 2
 - no HTTP client, no browser — Phases 2 and 3
+
+## Phase 2 — Complete
+
+Delivered in `lib/analysis/http/`:
+
+- `fetchPage(url, options)` — retrieves one page and returns either
+  `{ ok: true, response }` or `{ ok: false, failure }`. Never throws for an
+  expected condition.
+- `pinned-lookup.ts` — DNS resolution, address validation and connection
+  pinning (ADR-041).
+- `policy.ts` — the injectable security policy; the production default
+  delegates to the Phase 1 validator and address classifier.
+- `types.ts` — response and failure models, plus the mapping from a failure to
+  the `failed` / `timeout` / `blocked` / `invalid_url` job states of ADR-011.
+
+Collected: final URL, status and status text, headers (with `Set-Cookie` kept
+separate), content type, charset, declared and observed sizes, content
+encoding, redirect chain, per-phase timings, and the decoded HTML.
+
+Handled explicitly: timeout, DNS failure, refused connection, connection reset,
+TLS error, excessive redirects, redirect loop, redirect into blocked space,
+oversized response, decompression bomb, 4xx, 5xx, and non-HTML content.
+
+Controls implemented, per the Phase 2 column of ADR-035:
+
+- hostname resolved once, every resolved address validated, connection pinned
+  to a validated address (DNS-rebinding defence)
+- every redirect hop re-validated through the Phase 1 validator
+- timeout, maximum response size and redirect limit enforced
+
+Validation: 362 tests pass, including a decompression bomb, a redirect to the
+cloud metadata endpoint, and a public hostname resolving to a private address.
+The HTTP tests run against a real local server rather than a mock.
+
+Not delivered, deliberately:
+
+- no HTML parsing — Phase 4
+- no rendering, no JavaScript execution — Phase 3
+- no Lighthouse — Phase 8
+- no SEO or security interpretation of the headers — Phases 5 and 6
 
 ---
 

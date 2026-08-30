@@ -110,13 +110,40 @@ describe("successful fetch", () => {
     );
   });
 
-  it("reports transferred and decoded sizes", async () => {
+  it("reports observed sizes", async () => {
     await withServer(serveHtml(), async (baseUrl) => {
       const page = expectOk(await fetchLocal(`${baseUrl}/`));
 
       expect(page.transferredBytes).toBe(Buffer.byteLength(HTML));
       expect(page.decodedBytes).toBe(Buffer.byteLength(HTML));
-      expect(page.contentLength).toBe(Buffer.byteLength(HTML));
+    });
+  });
+
+  it("reports the declared length separately from the observed one", async () => {
+    await withServer(
+      (_request, response) => {
+        response.writeHead(200, {
+          "content-type": "text/html",
+          "content-length": String(Buffer.byteLength(HTML)),
+        });
+        response.end(HTML);
+      },
+      async (baseUrl) => {
+        const page = expectOk(await fetchLocal(`${baseUrl}/`));
+
+        expect(page.contentLength).toBe(Buffer.byteLength(HTML));
+        expect(page.transferredBytes).toBe(Buffer.byteLength(HTML));
+      },
+    );
+  });
+
+  it("reports a null declared length when the server sends chunked", async () => {
+    // Nothing was declared, so nothing is claimed — "not measured", not zero.
+    await withServer(serveHtml(), async (baseUrl) => {
+      const page = expectOk(await fetchLocal(`${baseUrl}/`));
+
+      expect(page.contentLength).toBeNull();
+      expect(page.headers["transfer-encoding"]).toBe("chunked");
     });
   });
 
@@ -146,17 +173,17 @@ describe("successful fetch", () => {
       async (baseUrl) => {
         const page = expectOk(await fetchLocal(`${baseUrl}/`));
 
-        expect(page.setCookie).toEqual([
-          "a=1; Path=/; HttpOnly",
-          "b=2; Path=/; Secure",
-        ]);
+        expect(page.setCookie).toEqual(["a=1; Path=/; HttpOnly", "b=2; Path=/; Secure"]);
         expect(page.headers["set-cookie"]).toBeUndefined();
       },
     );
   });
 
   it("decompresses a gzipped body and reports both sizes", async () => {
-    const compressed = zlib.gzipSync(Buffer.from(HTML));
+    // Large enough that compression actually shrinks it; gzipping 73 bytes does
+    // not, so a tiny fixture would prove nothing about the two counters.
+    const large = `<!doctype html><html><body>${"content ".repeat(2000)}</body></html>`;
+    const compressed = zlib.gzipSync(Buffer.from(large));
 
     await withServer(
       (_request, response) => {
@@ -169,11 +196,31 @@ describe("successful fetch", () => {
       async (baseUrl) => {
         const page = expectOk(await fetchLocal(`${baseUrl}/`));
 
-        expect(page.html).toBe(HTML);
+        expect(page.html).toBe(large);
         expect(page.contentEncoding).toBe("gzip");
         expect(page.transferredBytes).toBe(compressed.length);
-        expect(page.decodedBytes).toBe(Buffer.byteLength(HTML));
+        expect(page.decodedBytes).toBe(Buffer.byteLength(large));
         expect(page.transferredBytes!).toBeLessThan(page.decodedBytes!);
+      },
+    );
+  });
+
+  it("decompresses a brotli body", async () => {
+    const compressed = zlib.brotliCompressSync(Buffer.from(HTML));
+
+    await withServer(
+      (_request, response) => {
+        response.writeHead(200, {
+          "content-type": "text/html",
+          "content-encoding": "br",
+        });
+        response.end(compressed);
+      },
+      async (baseUrl) => {
+        const page = expectOk(await fetchLocal(`${baseUrl}/`));
+
+        expect(page.html).toBe(HTML);
+        expect(page.contentEncoding).toBe("br");
       },
     );
   });

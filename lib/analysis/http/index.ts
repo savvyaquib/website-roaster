@@ -14,10 +14,7 @@ export {
   type FetchPageOptions,
 } from "./fetch-page";
 
-export {
-  publicHttpSecurityPolicy,
-  type HttpSecurityPolicy,
-} from "./policy";
+export { publicHttpSecurityPolicy, type HttpSecurityPolicy } from "./policy";
 
 export {
   BlockedAddressError,

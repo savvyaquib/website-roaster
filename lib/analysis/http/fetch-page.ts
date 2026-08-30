@@ -203,12 +203,7 @@ export async function fetchPage(
 
       return {
         ok: true,
-        response: buildResponseData(
-          currentUrl,
-          outcome.response,
-          redirects,
-          elapsed(),
-        ),
+        response: buildResponseData(currentUrl, outcome.response, redirects, elapsed()),
       };
     }
 
@@ -476,9 +471,7 @@ function performRequest(url: string, config: RequestConfig): Promise<RequestOutc
 }
 
 /** Map a Node network error onto an explicit, reportable failure. */
-function classifyRequestError(
-  error: NodeJS.ErrnoException,
-): [HttpFailureCode, string] {
+function classifyRequestError(error: NodeJS.ErrnoException): [HttpFailureCode, string] {
   const code = error.code ?? "";
 
   if (code === BLOCKED_ADDRESS_ERROR_CODE) {
