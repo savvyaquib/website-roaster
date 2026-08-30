@@ -1082,6 +1082,121 @@ No change is made here, because weights are a product judgement and CLAUDE.md fo
 
 ---
 
+# ADR-038 — URL Normalization Rules
+
+## Status
+
+Accepted
+
+## Context
+
+Phase 1 must return a single canonical form of an accepted URL. Without fixed
+rules, the same page could be analyzed under several different identities, and
+Phase 16 would later have no reliable key for an analysis.
+
+## Decision
+
+An accepted URL is normalized as follows.
+
+Delegated to the WHATWG URL parser, which the platform already implements:
+
+- the scheme and host are lowercased;
+- an internationalised host is converted to punycode;
+- an explicitly written default port is removed;
+- a missing path becomes `/`.
+
+Applied by us:
+
+- **the fragment is dropped.** It is never transmitted to the server, so two
+  URLs differing only by fragment are the same analysis.
+- **a trailing root dot is removed from the host.** `example.com.` and
+  `example.com` are the same host, and keeping the dot would also let
+  `localhost.` slip past a suffix check.
+
+Deliberately *not* applied:
+
+- **the query string is preserved.** It routinely determines what the page
+  renders; stripping or reordering it would analyze a different page.
+- **the trailing slash of a path is preserved.** `/a` and `/a/` may serve
+  different content.
+
+## Schemeless input is refused, not repaired
+
+Input such as `example.com` is refused with the dedicated code
+`missing_scheme`, rather than being silently upgraded to `https://example.com`.
+
+Guessing a scheme means deciding, on the user's behalf, which of two different
+origins to contact. `http://` and `https://` can serve different content, and a
+silent guess is the kind of implicit behaviour that is hard to reason about
+later.
+
+The dedicated code exists so the UI can still offer a one-click
+"did you mean https://example.com?" — the affordance is preserved, but the
+choice stays visible and belongs to the user.
+
+## Consequences
+
+- Normalization is idempotent, and there is a test asserting it.
+- A URL that differs only by fragment will produce a cache or history hit once
+  Phase 16 exists.
+
+---
+
+# ADR-039 — Only Default Ports Are Analyzed
+
+## Status
+
+Accepted
+
+## Context
+
+Phase 1 must decide what to do with an explicit port, e.g.
+`http://example.com:8080/`.
+
+Permitting arbitrary ports would let anyone use a public analysis tool to probe
+which ports are open on a third-party host, and to distinguish "refused" from
+"timed out" by the error we report back. That is a port scanner with someone
+else's IP address on it.
+
+Blocking private *addresses* does not address this: the abuse is against public
+hosts, which pass every other check in this phase.
+
+## Decision
+
+Only the default port for the scheme is analyzed — 80 for `http`, 443 for
+`https`. An explicit non-default port is refused with `disallowed_port`.
+
+An explicitly written default port (`https://example.com:443/`) is accepted and
+normalized away, because it denotes exactly the same endpoint.
+
+## Alternatives considered
+
+- **Allow any port.** Simplest, and matches what a browser does, but hands out
+  the scanning capability described above.
+- **Allow a small allowlist (80, 443, 8080, 8443).** Softer, but the extra
+  ports are arbitrary: 8080 is no more "a website" than 8000 or 3000, and the
+  scanning concern returns in reduced form.
+
+## Reason
+
+V1 analyzes public websites, and public websites are served on default ports.
+The restriction costs little and removes a whole abuse category.
+
+## Consequences
+
+- A legitimate site on a non-standard port cannot be analyzed. This is a real
+  limitation and is documented as such.
+- Port checks run *after* address and hostname classification, so a private
+  address on port 8080 is reported as a private address — the more important
+  fact.
+
+## Revisit if
+
+Users report real sites they cannot analyze, or rate limiting and abuse
+controls (Phase 20) make the scanning concern manageable by other means.
+
+---
+
 # CHANGE LOG
 
 ## Initial version
@@ -1102,6 +1217,17 @@ the contradictions found during the pre-implementation documentation review:
 - ADR-035 documented that Phase 1 does not, by itself, close the SSRF risk.
 - ADR-036 defined what happens to a category that could not be measured.
 - ADR-034 and ADR-037 are Proposed and still need an answer before Phases 14 and 12 respectively.
+
+## Phase 1 — URL Validation
+
+Added ADR-038 and ADR-039.
+
+Both were forced by implementing Phase 1 and are recorded rather than assumed:
+
+- ADR-038 fixed the normalization rules and decided that schemeless input is
+  refused with an actionable code instead of being silently upgraded to https.
+- ADR-039 restricted analysis to the default ports, so the tool cannot be used
+  to port-scan a third party.
 
 New decisions are appended immediately above this section, using the form:
 

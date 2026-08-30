@@ -799,7 +799,7 @@ For each phase:
 
 ```text
 Phase 0 — ✅ Complete
-Phase 1 — ⏳ Not started
+Phase 1 — ✅ Complete
 Phase 2 — ⏳ Not started
 ...
 ```
@@ -824,6 +824,38 @@ Not delivered, deliberately:
 - no analyzer, crawler, scoring, AI or persistence code
 - no CI pipeline (not in the Phase 0 task list)
 - no browser test runner (deferred to Phase 17, ADR-025)
+
+## Phase 1 — Complete
+
+Delivered in `lib/analysis/url/`:
+
+- `validateUrl(input)` — the entry point. Returns `{ valid: true, normalizedUrl }`
+  or `{ valid: false, code, reason }`.
+- `ip.ts` — IPv4 and IPv6 literal parsing and range classification, including
+  addresses that embed IPv4 (IPv4-mapped, NAT64, 6to4).
+- `hostname.ts` — hostname syntax checks and internal-name classification.
+- `types.ts` — rejection codes, plus the mapping to the `invalid_url` and
+  `blocked` job states from ADR-011.
+
+Controls implemented, per the Phase 1 column of ADR-035:
+
+- protocol allowlist (`http`, `https`)
+- embedded credentials refused
+- IP literals in loopback, private, link-local, metadata, carrier-grade NAT,
+  multicast, unspecified and reserved ranges refused
+- `localhost`, single-label names and internal suffixes refused
+- default ports only (ADR-039)
+- control characters refused before parsing, so the parser cannot silently
+  strip them
+
+Validation: 300 tests pass, including alternate encodings of 127.0.0.1
+(decimal, hex, octal, short form, circled digits) and IPv6-wrapped private
+addresses.
+
+Not delivered, deliberately:
+
+- no DNS resolution, no address pinning, no redirect following — Phase 2
+- no HTTP client, no browser — Phases 2 and 3
 
 ---
 

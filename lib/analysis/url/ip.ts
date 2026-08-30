@@ -295,13 +295,22 @@ export type IpLiteralClassification =
 /**
  * Classify a hostname that may or may not be an IP literal.
  *
- * @param hostname a hostname as produced by `URL.hostname`, so IPv6 may be
- *   bracketed and IPv4 is already dotted-decimal.
+ * Accepts both forms an IPv6 address arrives in:
+ *
+ * - bracketed (`[::1]`), which is what `URL.hostname` returns;
+ * - bare (`::1`), which is what a DNS resolver returns.
+ *
+ * Both matter: Phase 1 classifies hostnames from a URL, and Phase 2 classifies
+ * the addresses those hostnames resolve to.
+ *
+ * @param hostname a hostname from `URL.hostname`, or a resolved IP address.
  */
 export function classifyIpLiteral(hostname: string): IpLiteralClassification {
-  if (hostname.startsWith("[")) {
+  // A colon cannot appear in a DNS hostname, so its presence means this is
+  // meant to be IPv6 — and something that is *meant* to be an address but does
+  // not parse is refused rather than waved through as a name.
+  if (hostname.startsWith("[") || hostname.includes(":")) {
     const hextets = parseIpv6(hostname);
-    // Bracketed but unparseable: still an IP literal, and not one we will touch.
     if (hextets === null) return { kind: "ip", reason: "reserved_address" };
     return { kind: "ip", reason: classifyIpv6(hextets) };
   }
