@@ -103,7 +103,7 @@ describe("successful fetch", () => {
         expect(page.contentType).toBe("text/html");
         expect(page.charset).toBe("utf-8");
         expect(page.isHtml).toBe(true);
-        expect(page.html).toBe(HTML);
+        expect(page.body).toBe(HTML);
         expect(page.headers["x-custom"]).toBe("value");
         expect(page.redirects).toEqual([]);
       },
@@ -196,7 +196,7 @@ describe("successful fetch", () => {
       async (baseUrl) => {
         const page = expectOk(await fetchLocal(`${baseUrl}/`));
 
-        expect(page.html).toBe(large);
+        expect(page.body).toBe(large);
         expect(page.contentEncoding).toBe("gzip");
         expect(page.transferredBytes).toBe(compressed.length);
         expect(page.decodedBytes).toBe(Buffer.byteLength(large));
@@ -219,7 +219,7 @@ describe("successful fetch", () => {
       async (baseUrl) => {
         const page = expectOk(await fetchLocal(`${baseUrl}/`));
 
-        expect(page.html).toBe(HTML);
+        expect(page.body).toBe(HTML);
         expect(page.contentEncoding).toBe("br");
       },
     );
@@ -237,7 +237,7 @@ describe("successful fetch", () => {
         const page = expectOk(await fetchLocal(`${baseUrl}/`));
 
         expect(page.charset).toBe("iso-8859-1");
-        expect(page.html).toContain("café");
+        expect(page.body).toContain("café");
       },
     );
   });
@@ -252,7 +252,7 @@ describe("successful fetch", () => {
         const page = expectOk(await fetchLocal(`${baseUrl}/`));
 
         expect(page.isHtml).toBe(true);
-        expect(page.html).toBe(HTML);
+        expect(page.body).toBe(HTML);
       },
     );
   });
@@ -269,7 +269,7 @@ describe("error statuses are data, not failures", () => {
         const page = expectOk(await fetchLocal(`${baseUrl}/`));
 
         expect(page.status).toBe(status);
-        expect(page.html).toContain("gone");
+        expect(page.body).toContain("gone");
       },
     );
   });
@@ -309,10 +309,51 @@ describe("non-HTML responses", () => {
 
         expect(page.status).toBe(200);
         expect(page.isHtml).toBe(false);
-        expect(page.html).toBeNull();
+        expect(page.body).toBeNull();
         expect(page.contentType).toBe(contentType);
         // Declared size is still reported; observed size is "not measured".
         expect(page.contentLength).toBe(12345);
+        expect(page.transferredBytes).toBeNull();
+      },
+    );
+  });
+
+  it("downloads a media type the caller explicitly asks for", async () => {
+    // Phase 5 uses this to retrieve robots.txt through this same validated
+    // client rather than a bare fetch (ADR-035).
+    await withServer(
+      (_request, response) => {
+        response.writeHead(200, { "content-type": "text/plain" });
+        response.end("User-agent: *");
+      },
+      async (baseUrl) => {
+        const page = expectOk(
+          await fetchLocal(`${baseUrl}/robots.txt`, {
+            downloadMediaTypes: ["text/plain"],
+          }),
+        );
+
+        expect(page.isHtml).toBe(false);
+        expect(page.body).toBe("User-agent: *");
+        expect(page.transferredBytes).toBe("User-agent: *".length);
+      },
+    );
+  });
+
+  it("still skips a media type that was not asked for", async () => {
+    await withServer(
+      (_request, response) => {
+        response.writeHead(200, { "content-type": "video/mp4" });
+        response.end("pretend-video");
+      },
+      async (baseUrl) => {
+        const page = expectOk(
+          await fetchLocal(`${baseUrl}/v.mp4`, {
+            downloadMediaTypes: ["text/plain"],
+          }),
+        );
+
+        expect(page.body).toBeNull();
         expect(page.transferredBytes).toBeNull();
       },
     );
@@ -329,7 +370,7 @@ describe("non-HTML responses", () => {
 
         expect(page.contentType).toBeNull();
         expect(page.isHtml).toBe(false);
-        expect(page.html).toBeNull();
+        expect(page.body).toBeNull();
       },
     );
   });

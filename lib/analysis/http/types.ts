@@ -97,16 +97,20 @@ export interface HttpResponseData {
   readonly contentType: string | null;
   /** Charset from the Content-Type header, lowercased. Null if not declared. */
   readonly charset: string | null;
-  /** Whether the body was treated as HTML and therefore downloaded. */
+  /** Whether the media type is an HTML one. */
   readonly isHtml: boolean;
   /**
-   * The decoded body, or `null` when it was not downloaded.
+   * The decoded text body, or `null` when it was not downloaded.
    *
-   * Non-HTML bodies are deliberately not downloaded: the analyzer has no use
-   * for the bytes of a PDF or a video, and streaming one would waste the size
-   * budget. `contentLength` still reports what the server declared.
+   * Only media types the caller asked for are downloaded — HTML by default.
+   * The analyzer has no use for the bytes of a PDF or a video, and streaming
+   * one would waste the size budget. `contentLength` still reports what the
+   * server declared.
+   *
+   * Named `body` rather than `html` because Phase 5 uses the same client to
+   * retrieve `robots.txt` and `sitemap.xml` (ADR-035).
    */
-  readonly html: string | null;
+  readonly body: string | null;
   /** `Content-Length` as declared by the server. Null if absent or unparseable. */
   readonly contentLength: number | null;
   /** Bytes actually received on the wire. Null when the body was not read. */

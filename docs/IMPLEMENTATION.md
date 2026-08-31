@@ -810,7 +810,8 @@ Phase 1 — ✅ Complete
 Phase 2 — ✅ Complete
 Phase 3 — ✅ Complete
 Phase 4 — ✅ Complete
-Phase 5 — ⏳ Not started
+Phase 5 — ✅ Complete
+Phase 6 — ⏳ Not started
 ...
 ```
 
@@ -980,6 +981,46 @@ Not delivered, deliberately:
 - no body text or word counts — Phase 10
 - no `<picture>`/`<source>` collection; only `<img>`
 - no label-to-field association — Phase 7 runs a real accessibility engine
+
+## Phase 5 — Complete
+
+Delivered in `lib/analysis/seo/`:
+
+- `analyzeSeo({ page, siteFiles })` — returns `Finding[]` and **no score**.
+  Performs no I/O; every check is a pure function of `PageData`.
+- `fetchSiteFiles(url)` — retrieves robots.txt and the sitemap through the
+  **Phase 2 client**, so they inherit its SSRF controls (ADR-035).
+- `checks/` — content, metadata, resources and site-file checks.
+- `robots-txt.ts` — minimal robots.txt parsing.
+- `thresholds.ts` — every number in one reviewable place.
+
+All fourteen checks from the phase specification are implemented: title exists,
+title length, meta description, heading structure, H1 presence, canonical,
+robots meta, robots.txt, sitemap availability, language, viewport, image alt,
+internal links and structured data.
+
+Rules worth knowing (ADR-045):
+
+- only two findings are `critical` — a `noindex` robots meta tag and a
+  site-wide `Disallow: /`. Both remove the site from search entirely.
+- `alt=""` is **not** a defect. It is the correct marking for a decorative
+  image, and there is a test asserting it is not reported.
+- a sitemap declared in robots.txt but not served is a `fail`; simply having no
+  sitemap is a `warn`. A broken promise is worse than no promise.
+- site files that were not retrieved report `could_not_determine`, never a pass.
+
+Validation: 572 tests pass, 79 of them for this phase. The site-file tests run
+against a real local server.
+
+Phase 2 was extended to support this: a `downloadMediaTypes` option, and the
+response field `html` renamed to `body` to match what it now carries.
+
+Not delivered, deliberately:
+
+- no scoring — Phase 12
+- no full robots.txt path matching; nothing in V1 crawls (ADR-005)
+- no sitemap XML validation, only existence
+- no keyword, content-quality or backlink analysis
 
 ---
 

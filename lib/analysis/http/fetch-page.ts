@@ -52,8 +52,19 @@ export const DEFAULT_MAX_REDIRECTS = 5;
 export const DEFAULT_USER_AGENT =
   "WebsiteRoaster/0.1 (automated website quality analysis)";
 
-/** Media types whose body we download. Everything else is metadata-only. */
+/** Media types recognised as HTML. */
 const HTML_MEDIA_TYPES = new Set(["text/html", "application/xhtml+xml"]);
+
+/**
+ * Media types whose body is downloaded by default.
+ *
+ * Phase 5 widens this to retrieve `robots.txt` and `sitemap.xml` through this
+ * same validated client rather than a bare fetch (ADR-035).
+ */
+const DEFAULT_DOWNLOAD_MEDIA_TYPES: readonly string[] = [
+  "text/html",
+  "application/xhtml+xml",
+];
 
 /** Statuses we follow, provided a usable `Location` is present. */
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
@@ -83,6 +94,13 @@ export interface FetchPageOptions {
   /** Default 5. */
   readonly maxRedirects?: number;
   readonly userAgent?: string;
+  /**
+   * Media types whose body should be downloaded.
+   *
+   * Defaults to HTML only. Anything not listed is reported as metadata with a
+   * `null` body, so a video is never streamed just to measure it.
+   */
+  readonly downloadMediaTypes?: readonly string[];
   /** Default: public-internet-only. See policy.ts. */
   readonly policy?: HttpSecurityPolicy;
   readonly logger?: Logger;
@@ -119,7 +137,7 @@ interface SingleResponse {
   readonly contentType: string | null;
   readonly charset: string | null;
   readonly isHtml: boolean;
-  readonly html: string | null;
+  readonly body: string | null;
   readonly contentLength: number | null;
   readonly transferredBytes: number | null;
   readonly decodedBytes: number | null;
@@ -142,6 +160,9 @@ export async function fetchPage(
   const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
   const maxRedirects = options.maxRedirects ?? DEFAULT_MAX_REDIRECTS;
   const userAgent = options.userAgent ?? DEFAULT_USER_AGENT;
+  const downloadMediaTypes = new Set(
+    options.downloadMediaTypes ?? DEFAULT_DOWNLOAD_MEDIA_TYPES,
+  );
   const policy = options.policy ?? publicHttpSecurityPolicy;
   const log = options.logger ?? createLogger("analysis.http");
   const lookup = options.lookup ?? createPinnedLookup(policy);
@@ -187,6 +208,7 @@ export async function fetchPage(
       maxBytes,
       userAgent,
       lookup,
+      downloadMediaTypes,
     });
 
     if (outcome.kind === "failure") {
@@ -261,6 +283,7 @@ interface RequestConfig {
   readonly maxBytes: number;
   readonly userAgent: string;
   readonly lookup: LookupFunction;
+  readonly downloadMediaTypes: ReadonlySet<string>;
 }
 
 /**
@@ -361,9 +384,11 @@ function performRequest(url: string, config: RequestConfig): Promise<RequestOutc
       const contentEncoding = headers["content-encoding"]?.toLowerCase() ?? null;
       const contentLength = parseContentLength(headers["content-length"]);
       const isHtml = mediaType !== null && HTML_MEDIA_TYPES.has(mediaType);
+      const shouldDownload =
+        mediaType !== null && config.downloadMediaTypes.has(mediaType);
 
       const finish = (
-        html: string | null,
+        body: string | null,
         transferredBytes: number | null,
         decodedBytes: number | null,
       ): void => {
@@ -377,7 +402,7 @@ function performRequest(url: string, config: RequestConfig): Promise<RequestOutc
             contentType: mediaType,
             charset,
             isHtml,
-            html,
+            body,
             contentLength,
             transferredBytes,
             decodedBytes,
@@ -394,9 +419,9 @@ function performRequest(url: string, config: RequestConfig): Promise<RequestOutc
         });
       };
 
-      // Metadata only for non-HTML: downloading a video to measure it would
-      // burn the whole size budget for nothing.
-      if (!isHtml) {
+      // Metadata only for media types the caller did not ask for: downloading
+      // a video to measure it would burn the whole size budget for nothing.
+      if (!shouldDownload) {
         response.destroy();
         finish(null, null, null);
         return;
@@ -605,7 +630,7 @@ function buildResponseData(
     contentType: response.contentType,
     charset: response.charset,
     isHtml: response.isHtml,
-    html: response.html,
+    body: response.body,
     contentLength: response.contentLength,
     transferredBytes: response.transferredBytes,
     decodedBytes: response.decodedBytes,

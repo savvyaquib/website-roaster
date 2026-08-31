@@ -1561,6 +1561,110 @@ are not part of the page as rendered.
 
 ---
 
+# ADR-045 — SEO Checks, Thresholds And Site-File Retrieval
+
+## Status
+
+Accepted
+
+## Decision
+
+### Checks are pure; retrieval is separate
+
+Every SEO check is a pure function of `PageData` (and, where relevant, already
+retrieved site files). `analyzeSeo` performs no I/O at all.
+
+The two checks that need the network — robots.txt and the sitemap — are fed by
+`fetchSiteFiles`, which runs separately and hands its results in as data. That
+split is what makes the whole phase deterministic and unit-testable, and it is
+why the analyzer can be exercised without a server.
+
+### Site files go through the Phase 2 client
+
+`robots.txt` and `sitemap.xml` are retrieved with `fetchPage`, not a bare fetch.
+
+They are not exempt from the SSRF controls for being "our own" requests: the
+origin comes from a user-submitted URL, and a redirect from robots.txt is
+exactly as dangerous as a redirect from the page (ADR-035).
+
+This required a small extension to Phase 2: `downloadMediaTypes`. The client
+previously downloaded HTML bodies only, which is right for a page and wrong for
+a plain-text robots.txt. The response field was renamed `html` → `body` to match
+what it now carries.
+
+### Thresholds live apart from the checks
+
+`thresholds.ts` holds every number — title length, description length, the
+sitemap paths — for the same reason the scoring weights live in
+`docs/SCORING.md`: so they can be reviewed without reading the logic, and so
+nobody has to guess where a number came from.
+
+They are **conventions, not measurements**: 60 characters for a title and 160
+for a description are the widely published guidance for how search results
+render, not laws. Every finding that applies one reports the measured value as
+evidence, so a reader who disagrees with the threshold can still trust the
+number.
+
+### Severity reflects consequence, not effort
+
+Two findings are `critical`, and only two:
+
+- **`noindex` in the robots meta tag**, and
+- **`Disallow: /` for `User-agent: *` in robots.txt.**
+
+Both remove the site from search results entirely, and both are very commonly
+left behind after a staging deployment. Everything else is at most `serious`,
+because everything else degrades results rather than eliminating them.
+
+Absence of something optional is a `warn`, never a `fail`. A missing sitemap or
+missing structured data is worth mentioning; calling it a failure would
+misrepresent how search works.
+
+One case escalates: a sitemap **declared in robots.txt but not served** is a
+`fail`, where simply having no sitemap is a `warn`. A broken promise is worse
+than no promise.
+
+### An empty `alt` is not a defect
+
+`alt=""` is the correct way to mark a decorative image. Phase 4 preserves the
+difference between an absent and an empty `alt` specifically so this check does
+not conflate them, and there is a test asserting a decorative image is not
+reported.
+
+Penalising `alt=""` would punish sites for doing the accessible thing.
+
+### Not looking is never a pass
+
+When site files were not retrieved, the checks emit `could_not_determine` — not
+`pass`, and not silence. This is ADR-021 applied at the point it actually
+matters: a report that quietly omits the robots.txt check reads as though
+robots.txt were fine.
+
+### Findings are ordered, not scored
+
+`analyzeSeo` returns `Finding[]` in a fixed order — indexing directives first,
+then metadata, structure, and resources. A page nobody can index has one problem
+worth reading before the others.
+
+It produces **no score**. Turning findings into numbers is Phase 12, and keeping
+evidence collection apart from scoring is what makes a score explainable
+(ADR-001, ADR-002).
+
+## Deliberately limited
+
+- **robots.txt parsing is minimal**: sitemap declarations and a site-wide
+  wildcard block. Path matching, wildcards, `Allow` precedence and crawl-delay
+  are not modelled, because nothing in V1 crawls (ADR-005) and a half-correct
+  matcher would invite callers to trust it for decisions it cannot make.
+- **The sitemap is checked for existence, not validity.** Its XML is not parsed
+  and the URLs inside it are not verified.
+- **Only the first heading-level skip is reported.** A page with a broken
+  outline usually has many, and listing every one would bury the point.
+- **No keyword, content-quality or backlink analysis.** Those are not technical
+  SEO, and two of them are not observable from a single page at all.
+
+---
+
 # CHANGE LOG
 
 ## Initial version
@@ -1627,6 +1731,21 @@ phase's determinism criterion structurally true; the `null` vs `""` convention
 that keeps a missing `alt` distinguishable from a decorative one; and the
 decision that `<base>` governs resolution but not which host counts as
 internal.
+
+## Phase 5 — SEO Analyzer
+
+Added ADR-045.
+
+It records that the checks are pure functions while retrieval is separate; that
+robots.txt and the sitemap go through the Phase 2 client rather than a bare
+fetch; that thresholds are conventions kept apart from the logic; that only the
+two directives which remove a site from search entirely are `critical`; that
+`alt=""` is not a defect; and that a file which was not retrieved reports
+`could_not_determine`, never a pass.
+
+Phase 2 was extended to support this: a `downloadMediaTypes` option, since the
+client previously downloaded HTML bodies only, and the response field `html`
+was renamed `body` to match what it now carries.
 
 The Phase 3 constraint in `docs/IMPLEMENTATION.md` was amended: it previously
 read "the browser is network-isolated", which the implementation does not
