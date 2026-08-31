@@ -1448,6 +1448,119 @@ failure codes exist precisely so the reason can be reported accurately.
 
 ---
 
+# ADR-044 — HTML Parsing And The Normalized Page Model
+
+## Status
+
+Accepted
+
+## Context
+
+Phase 4 must turn a page into one structured representation that every analyzer
+from Phase 5 onwards reads. Two questions had to be answered: what parses the
+HTML, and what the resulting model guarantees.
+
+## Decision
+
+### parse5, not a browser and not a DOM emulator
+
+Node has no HTML parser, so a dependency is unavoidable — and hand-writing one
+would be a correctness disaster, because real pages rely on the HTML5 recovery
+rules for unclosed tags and implied elements.
+
+**parse5** was chosen. It is the WHATWG-conformant parser that jsdom and cheerio
+themselves use, and it brings one transitive dependency (`entities`).
+
+Alternatives considered:
+
+- **jsdom** — a full DOM plus a scripting environment. Far more surface than
+  reading attributes needs, and a much larger dependency tree.
+- **cheerio** — pleasant jQuery-style selectors, but a heavier tree and a
+  querying idiom this codebase does not otherwise use. It wraps parse5 anyway.
+- **node-html-parser** — small and fast, but not spec-compliant on malformed
+  input, which is precisely the input that matters.
+- **Re-using the Phase 3 browser** — rejected. It would make Phase 4 depend on
+  Chromium, make its output non-deterministic, and duplicate work Phase 3 has
+  already done.
+
+A thin traversal adapter (`dom-tree.ts`) is the only module that knows what a
+parse5 node looks like, so the parser could be replaced without touching the
+extractors.
+
+### The extractor is a pure function
+
+`extractPageData(html, url)` launches no browser, makes no request and reads no
+clock. That is what makes Phase 4's acceptance criterion — deterministic output
+for the same page state — structurally true rather than merely asserted, and it
+is why the phase is fully unit-testable.
+
+It accepts either the raw HTML from Phase 2 or the post-JavaScript DOM from
+Phase 3. The caller decides; on a JavaScript-rendered site the rendered form is
+the honest one.
+
+### `null` and `""` mean different things
+
+Throughout `PageData`, `null` means "not present in the document" and `""` means
+"present but empty".
+
+`<title></title>` is a different fact from a page with no `<title>`, and
+`<img alt="">` — the correct way to mark a decorative image — is a different
+fact from an `<img>` with no `alt` at all, which is a defect. Collapsing either
+pair would destroy exactly the distinction ADR-021 exists to preserve, and would
+make a correctly-marked decorative image indistinguishable from a broken one.
+
+### Extraction never judges
+
+Nothing in Phase 4 decides whether a title is too long, whether an image needs
+alt text, or whether a page has too many scripts. Those are Phases 5 to 11.
+
+Two consequences of holding that line:
+
+- image `width`/`height` are kept as **raw attribute strings**. They may read
+  `100`, `100px` or nonsense, and normalising them here would silently discard
+  the difference between "declared oddly" and "not declared".
+- `<script type="application/ld+json">` blocks are listed in `scripts` *and*
+  surfaced as raw `jsonLdBlocks`. They are scripts by element, data by content;
+  reporting both lets a JavaScript-cost analyzer filter on `type` while an SEO
+  analyzer reads the structured data. The JSON is deliberately left unparsed.
+
+### `<base>` resolves, but does not redefine the site
+
+A `<base href>` changes how relative URLs resolve. It does **not** change which
+host counts as internal: that is a question about the page's own origin.
+
+A page on `example.com` with `<base href="https://cdn.example.com/">` links
+*away from its own site*, and reporting those links as internal would misdescribe
+the site's structure. Resolution uses the base URL; classification uses the page
+URL.
+
+### Elements are matched in the HTML namespace only
+
+`<a>` inside `<svg>` is an SVG link, not an HTML anchor. Counting it as one
+would inflate the link list of every page using an inline icon set.
+
+`<template>` contents are not read at all: they are inert until cloned, so they
+are not part of the page as rendered.
+
+## Consequences
+
+- Phase 5 onwards reads `PageData` and never re-parses HTML, which is what keeps
+  their findings consistent with one another.
+- The model is plain data with no framework types, so it can cross the
+  API boundary in Phase 16 unchanged.
+
+## Deliberately not included
+
+- **Body text and word counts.** Phase 10 extracts content, and holding the full
+  text of every page here would add weight for a consumer that does not exist
+  yet.
+- **`<picture>` / `<source>` elements.** Only `<img>` is collected today.
+- **Label-to-field association.** Phase 7 runs a real accessibility engine in the
+  browser, which does this properly; approximating it here would produce a
+  second, weaker answer to the same question.
+
+---
+
 # CHANGE LOG
 
 ## Initial version
@@ -1503,6 +1616,17 @@ Added ADR-042 and ADR-043.
 - ADR-043 recorded the rendering model: one browser process, one context per
   viewport, `load` plus a fixed settle allowance, screenshots held in memory,
   and the rule that Phase 3 observes but never interprets.
+
+## Phase 4 — DOM Analyzer
+
+Added ADR-044.
+
+It records the choice of parse5 over jsdom, cheerio and re-using the browser;
+the rule that `extractPageData` is a pure function, which is what makes the
+phase's determinism criterion structurally true; the `null` vs `""` convention
+that keeps a missing `alt` distinguishable from a decorative one; and the
+decision that `<base>` governs resolution but not which host counts as
+internal.
 
 The Phase 3 constraint in `docs/IMPLEMENTATION.md` was amended: it previously
 read "the browser is network-isolated", which the implementation does not

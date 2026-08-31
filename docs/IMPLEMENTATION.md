@@ -809,7 +809,8 @@ Phase 0 — ✅ Complete
 Phase 1 — ✅ Complete
 Phase 2 — ✅ Complete
 Phase 3 — ✅ Complete
-Phase 4 — ⏳ Not started
+Phase 4 — ✅ Complete
+Phase 5 — ⏳ Not started
 ...
 ```
 
@@ -939,6 +940,46 @@ Not delivered, deliberately:
 - no mobile or layout judgement — Phase 9
 - no Lighthouse, no performance scoring — Phase 8
 - no network isolation at the OS level — see ADR-042 and Phase 20
+
+## Phase 4 — Complete
+
+Delivered in `lib/analysis/dom/`:
+
+- `extractPageData(html, url)` — a **pure function** returning `PageData`. No
+  browser, no network, no clock, which is what makes this phase's determinism
+  criterion structurally true rather than asserted.
+- `dom-tree.ts` — the parse5 traversal adapter, and the only module that knows
+  what a parse5 node looks like.
+- `urls.ts` — URL resolution, `<base>` handling and link classification.
+- `types.ts` — the `PageData` model.
+
+Extracted: title, meta description, headings, links, images, forms, scripts,
+stylesheets, language and viewport metadata, plus canonical, robots, charset,
+`<base href>` and raw JSON-LD blocks that Phase 5 will need.
+
+The representation is plain data with no framework types, so it crosses the API
+boundary in Phase 16 unchanged.
+
+Conventions worth knowing (ADR-044):
+
+- `null` means "not in the document", `""` means "present but empty". A missing
+  `alt` is a defect; `alt=""` marks a decorative image. They stay distinct.
+- raw attribute values are kept raw — image `width` may be `100`, `100px` or
+  nonsense, and normalising it here would hide the difference.
+- `<base>` changes resolution but not which host counts as internal.
+- elements are matched in the HTML namespace only, so an `<a>` inside `<svg>` is
+  not counted as a link.
+
+Validation: 499 tests pass, 90 of them for this phase, covering malformed HTML,
+unclosed tags, uppercase markup, entity decoding, `<base>` resolution, inert
+`<template>` content, and determinism across repeated runs.
+
+Not delivered, deliberately:
+
+- no SEO judgement of any kind — Phase 5
+- no body text or word counts — Phase 10
+- no `<picture>`/`<source>` collection; only `<img>`
+- no label-to-field association — Phase 7 runs a real accessibility engine
 
 ---
 
