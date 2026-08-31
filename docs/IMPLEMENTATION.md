@@ -237,8 +237,15 @@ Use Playwright (ADR-033).
 The browser module must expose a connection endpoint, not only a page handle,
 because Phase 8 attaches Lighthouse to the same browser process.
 
-The browser is network-isolated so that a rendered page cannot reach private
-addresses (ADR-035).
+Every request the rendered page makes is checked against the same policy the
+HTTP analyzer uses, and refused if it points anywhere we would not go
+ourselves (ADR-042).
+
+That guard is defence in depth, NOT isolation: Chromium resolves DNS itself, so
+the rebinding window Phase 2 closes by pinning cannot be closed in application
+code. True isolation is a deployment control — a container with no route to
+private ranges, or an egress firewall — and is a Phase 20 prerequisite before
+the analyzer is exposed publicly.
 
 ---
 
@@ -801,7 +808,8 @@ For each phase:
 Phase 0 — ✅ Complete
 Phase 1 — ✅ Complete
 Phase 2 — ✅ Complete
-Phase 3 — ⏳ Not started
+Phase 3 — ✅ Complete
+Phase 4 — ⏳ Not started
 ...
 ```
 
@@ -897,6 +905,40 @@ Not delivered, deliberately:
 - no rendering, no JavaScript execution — Phase 3
 - no Lighthouse — Phase 8
 - no SEO or security interpretation of the headers — Phases 5 and 6
+
+## Phase 3 — Complete
+
+Delivered in `lib/analysis/browser/`:
+
+- `renderPage(url, options)` — renders at a desktop and a mobile viewport and
+  returns `{ ok: true, page }` or `{ ok: false, failure }`.
+- `session.ts` — browser lifecycle, exposing the DevTools endpoint ADR-033
+  requires so Phase 8 can attach Lighthouse to the same process.
+- `navigation-guard.ts` — the request guard (ADR-042).
+- `viewports.ts` — desktop 1440x900, mobile 390x844.
+
+Collected per viewport: PNG screenshot, post-JavaScript DOM, title, `lang`,
+viewport meta, HTTP status, final URL, layout metrics (scroll vs client width),
+and navigation + paint timings. Aggregated across viewports: console errors and
+warnings, uncaught page errors, network requests, and refused requests.
+
+Explicit failure codes: `invalid_url`, `blocked`, `browser_unavailable`,
+`timeout`, `navigation_failed`, `renderer_crashed`, `browser_error`.
+
+Resource handling: the browser is closed in a `finally` on every path, each
+viewport's context is closed after use, and console and network entries are
+capped (200 and 500).
+
+Validation: 408 tests pass. The browser tests run against real Chromium and a
+local server, and are skipped with a clear message when Chromium is not
+installed.
+
+Not delivered, deliberately:
+
+- no parsing of the rendered HTML — Phase 4
+- no mobile or layout judgement — Phase 9
+- no Lighthouse, no performance scoring — Phase 8
+- no network isolation at the OS level — see ADR-042 and Phase 20
 
 ---
 

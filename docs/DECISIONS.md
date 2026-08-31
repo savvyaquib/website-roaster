@@ -1314,6 +1314,140 @@ address is either misconfigured or hostile. Neither deserves a request.
 
 ---
 
+# ADR-042 — The Browser Request Guard, And What It Does Not Do
+
+## Status
+
+Accepted
+
+## Context
+
+ADR-035 assigns the largest part of the SSRF surface to Phase 3: a rendered page
+issues its own requests, and it chooses them. An attacker's page can simply
+contain `fetch('http://169.254.169.254/latest/meta-data/')`. Neither URL
+validation nor the pinned HTTP client sees that request.
+
+## Decision
+
+Every request the browser makes is intercepted and checked against the same
+policy the HTTP analyzer uses:
+
+- non-network schemes (`data:`, `blob:`, `about:`) are allowed unchecked, since
+  refusing them breaks ordinary pages while preventing nothing;
+- `file:`, `ftp:` and anything else exotic are refused;
+- `http:` and `https:` URLs go through the Phase 1 validator, then their
+  hostname is resolved and every resolved address is checked with the Phase 1
+  classifier.
+
+Refused requests are aborted and recorded, so a blocked request is visible
+evidence rather than a silent hole in the page.
+
+Resolution results are cached per hostname. A page makes hundreds of requests to
+a handful of hosts, and an uncached guard would issue a DNS lookup per
+subresource and dominate the page load.
+
+A hostname that fails to resolve is **allowed** rather than refused. It cannot
+reach anything, and refusing it would report a security block for what is
+actually a broken DNS record — which would mislead the user (ADR-021).
+
+## What this does NOT do
+
+**This is not isolation, and the browser must not be described as isolated
+because of it.**
+
+Chromium performs its own DNS resolution. A name that resolves to a public
+address when the guard checks it can resolve to a private one when the browser
+connects. That is the same rebinding window Phase 2 closes by pinning the
+socket — and it cannot be closed here, because we do not own the socket.
+
+Phase 3's constraint in `docs/IMPLEMENTATION.md` says "the browser is
+network-isolated". This guard does not achieve that on its own. Real isolation
+requires a boundary the process cannot cross:
+
+- a container with no route to private ranges, or
+- an egress firewall denying RFC 1918, link-local and metadata addresses.
+
+That is a deployment control, not application code. It is tracked as a Phase 20
+prerequisite and must be in place before the analyzer is exposed publicly.
+
+## Known gaps
+
+- **WebSockets are not intercepted.** Playwright's request routing does not
+  cover them, so a page could open a `ws://` connection the guard never sees.
+  The network boundary above is what closes this.
+- **The guard runs in-process**, so a Chromium sandbox escape would bypass it
+  entirely. The sandbox is deliberately left enabled (`--no-sandbox` is never
+  passed) for that reason.
+
+---
+
+# ADR-043 — Rendering Model
+
+## Status
+
+Accepted
+
+## Decision
+
+### One browser, one context per viewport
+
+The desktop and mobile renderings run in **separate browser contexts** inside a
+**single browser process**.
+
+Separate contexts because a shared one would carry cache, cookies and storage
+from the first rendering into the second, so the mobile measurements would
+describe a warm visit rather than a first one. A single process because
+launching Chromium is the expensive part (ADR-033), and it is what lets Phase 8
+attach Lighthouse to the same browser.
+
+### Navigation waits for `load`, then a fixed settle allowance
+
+`networkidle` never arrives on a page that polls or holds a long connection, so
+it cannot be the wait condition. The analyzer waits for `load` and then allows a
+fixed, small settle period (1.5s by default) for work that happens after it.
+
+This is a deliberate approximation. It will under-measure pages that render
+late, and Phase 8's Lighthouse run — which has its own, more rigorous wait — is
+the authority on performance.
+
+### Nothing observed here is interpreted here
+
+Phase 3 returns the serialized post-JavaScript DOM. It does **not** parse it.
+
+Structural extraction is Phase 4, layout judgement is Phase 9, and performance
+scoring is Phase 8. Parsing here would create a second representation of the
+page competing with Phase 4's, which is the situation ADR-029 exists to prevent.
+
+The one exception is layout metrics (`scrollWidth`, `clientWidth`, and
+friends), which are collected here because they cannot be recovered from HTML —
+they only exist once the page has been laid out. They are raw measurements; what
+they mean is Phase 9's decision.
+
+### Screenshots are viewport-sized PNGs held in memory
+
+Above-the-fold by default, at a device scale factor of 1. A full-page capture is
+available behind an option.
+
+Scale factor 1 rather than 2 because a retina capture is roughly four times the
+bytes for no extra analytical value, and there is no artifact store before
+Phase 16 (ADR-031) — every screenshot is carried in memory until then.
+
+### Both viewports must succeed
+
+If either rendering fails, the whole analysis fails. A partial result would
+force every downstream consumer to handle a half-populated structure, and the
+failure codes exist precisely so the reason can be reported accurately.
+
+## Consequences
+
+- The target site is loaded twice per browser analysis, plus once more by
+  Lighthouse in Phase 8. This is the documented cost of ADR-033.
+- Retained console and network entries are capped (200 and 500) so a chatty page
+  cannot exhaust memory. The caps are recorded here so the truncation is not
+  mistaken for a quiet page.
+
+---
+
 # CHANGE LOG
 
 ## Initial version
@@ -1356,6 +1490,23 @@ Added ADR-040 and ADR-041.
 - ADR-041 recorded the DNS-rebinding defence: resolve once, pin the connection
   to a validated address, and refuse the connection if *any* resolved address
   is disallowed.
+
+## Phase 3 — Browser Analyzer
+
+Added ADR-042 and ADR-043.
+
+- ADR-042 recorded the browser request guard, and states plainly that it is
+  **not** isolation: Chromium resolves DNS itself, so the rebinding window
+  Phase 2 closes by pinning cannot be closed in application code. Real
+  isolation is a deployment control and is a Phase 20 prerequisite. WebSockets
+  are a known gap.
+- ADR-043 recorded the rendering model: one browser process, one context per
+  viewport, `load` plus a fixed settle allowance, screenshots held in memory,
+  and the rule that Phase 3 observes but never interprets.
+
+The Phase 3 constraint in `docs/IMPLEMENTATION.md` was amended: it previously
+read "the browser is network-isolated", which the implementation does not
+achieve on its own.
 
 Also fixed a Phase 1 defect found while implementing this phase:
 `classifyIpLiteral` recognised IPv6 only in its bracketed form, so a bare

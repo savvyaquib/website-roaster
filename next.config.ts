@@ -1,8 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Analyzer dependencies that must not be bundled (e.g. the browser driver in
-  // Phase 3) are added to `serverExternalPackages` when those phases land.
+  // Playwright drives a native browser binary and must not be bundled into a
+  // route. It is loaded through a dynamic import on the server only.
+  serverExternalPackages: ["playwright"],
 };
 
 export default nextConfig;
