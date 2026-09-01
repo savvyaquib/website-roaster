@@ -811,7 +811,8 @@ Phase 2 — ✅ Complete
 Phase 3 — ✅ Complete
 Phase 4 — ✅ Complete
 Phase 5 — ✅ Complete
-Phase 6 — ⏳ Not started
+Phase 6 — ✅ Complete
+Phase 7 — ⏳ Not started
 ...
 ```
 
@@ -1027,6 +1028,75 @@ Not delivered, deliberately:
 - no full robots.txt path matching; nothing in V1 crawls (ADR-005)
 - no sitemap XML validation, only existence
 - no keyword, content-quality or backlink analysis
+
+## Phase 6 — Complete
+
+Delivered in `lib/analysis/security/`:
+
+- `analyzeSecurity({ response })` — returns `Finding[]` and no score. Reads the
+  Phase 2 response; performs no I/O of its own.
+- `checks/` — transport (HTTPS, HSTS), headers (CSP, frame protection,
+  X-Content-Type-Options, Referrer-Policy), cookies, and disclosure.
+- `cookies.ts` — `Set-Cookie` parsing that captures names and attributes and
+  **never the value**.
+- `directives.ts` — CSP and HSTS parsing.
+- `thresholds.ts` — the values the checks compare against.
+
+All eight areas from the specification are covered, across 34 findings.
+
+Rules worth knowing (ADR-046):
+
+- the analyzer **never states that a site is secure** and never claims a
+  vulnerability. A test scans every explanation, recommendation and evidence
+  summary across every scenario for phrases like "is secure", "no
+  vulnerabilities" and "guarantee".
+- cookie **values** are never captured, because this report reaches logs, an API
+  response and eventually an AI prompt. Names are kept so findings stay
+  actionable.
+- disclosure findings are `minor`: knowing a site runs nginx does not let anyone
+  in. A version is reported; a bare product name is not.
+- HSTS on a plain HTTP page reports `could_not_determine`, since browsers ignore
+  the header there and there is nothing to assess.
+
+Validation: 713 tests pass, 110 of them for this phase.
+
+### SSRF review of the existing architecture
+
+Requested alongside this phase. Verified against the code and, where stated, by
+test:
+
+**Confirmed sound:**
+
+- the pinned lookup is passed to **every** redirect hop, so DNS resolution and
+  address validation run per request rather than only on the first. A new
+  `lib/analysis/http/ssrf.test.ts` proves this: a redirect to a public hostname
+  that resolves to `10.0.0.1` is refused at the address layer, which the URL
+  layer cannot catch.
+- redirect targets carrying credentials are refused.
+- no cookie or authorization header is ever sent, so a redirect to another
+  origin cannot leak credentials from an earlier hop. Now asserted by test.
+- the production defaults are strict with no options supplied.
+
+**Weakness found:**
+
+- `fetchSiteFiles` spreads caller-supplied `fetchOptions` **after** its own
+  defaults, so any caller can override `policy` and `lookup` — the security
+  controls, not just the budgets. It exists as a test seam and nothing in
+  production passes it, but the override is available to any caller rather than
+  being confined to tests. Recorded here rather than changed, because
+  tightening it changes a Phase 5 signature.
+
+**Unchanged known gap:** the browser guard is not isolation (ADR-042). Chromium
+resolves DNS itself and WebSockets are not intercepted. This remains a Phase 20
+deployment prerequisite.
+
+Not delivered, deliberately:
+
+- no scoring — Phase 12
+- no TLS certificate, protocol or cipher inspection
+- no active testing of any kind, which is what keeps this safe to point at a
+  site that did not ask to be scanned
+- no assessment of routes other than the one analyzed
 
 ---
 

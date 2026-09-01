@@ -1678,6 +1678,94 @@ evidence collection apart from scoring is what makes a score explainable
 
 ---
 
+# ADR-046 — Security Findings Report Configuration, Never Safety
+
+## Status
+
+Accepted
+
+## Decision
+
+### The analyzer never states that a site is secure
+
+Everything Phase 6 reads is response metadata: the scheme, a handful of headers,
+cookie attributes. That evidence can support *"this response does not set a
+Content-Security-Policy"* — a fact. It cannot support *"this site is safe"*,
+because nothing here tests the application, its dependencies, its
+authentication, or anything behind it.
+
+Passing findings therefore describe **configuration**, in those words. The HTTPS
+pass says the transport was encrypted and "says nothing about the rest of the
+site's configuration".
+
+This is not modesty. A security section that reads as a clean bill of health is
+worse than no security section, because it invites someone to stop looking. It
+is enforced by a test that scans every explanation, recommendation and evidence
+summary across every scenario for phrases like "is secure", "no
+vulnerabilities" and "guarantee".
+
+The analyzer also never claims a **vulnerability**. A missing header is a
+missing header; whether it is exploitable here is not observable from a
+response.
+
+### Cookie values are never captured
+
+`parseSetCookie` reads a cookie's name and attributes and discards the value.
+
+A `Set-Cookie` on a real site frequently carries a live session token, and this
+analyzer's output flows into logs, an API response, a stored report and
+eventually an AI prompt (ADR-014). A value captured here would reach all of
+them.
+
+Nothing in the checks needs it — whether a cookie is `Secure` is a property of
+its attributes. Keeping the value out of the data structure entirely is stronger
+than remembering to redact it downstream, and there is a test asserting a
+session value never appears in the serialized findings.
+
+Cookie **names** are kept, because a finding that cannot say which cookie is
+missing `Secure` is not actionable.
+
+### Severity reflects consequence
+
+- **`critical`** — no HTTPS. Everything else in the report is advisory when the
+  connection can be read and rewritten in transit.
+- **`serious`** — a cookie missing `Secure` on an HTTPS site, or `SameSite=None`
+  without `Secure` (which current browsers reject outright, so the cookie simply
+  does not work).
+- **`moderate`** — a missing CSP, missing frame protection, missing HSTS.
+- **`minor`** — disclosure, referrer policy, `nosniff`.
+
+**Disclosure is deliberately minor.** Knowing a site runs nginx does not let
+anyone in, and hiding it does not keep anyone out. A *version* is reported and a
+bare product name is not, because a version turns "what is this running?" into
+"which published vulnerabilities apply?".
+
+### Frame protection is one finding, not two
+
+`frame-ancestors` in a CSP supersedes `X-Frame-Options`. A site with a correct
+CSP is protected, and reporting a missing legacy header alongside it would be
+noise. The two mechanisms are assessed together and produce a single finding.
+
+### Where a check cannot apply, it says so
+
+HSTS delivered over plain HTTP is ignored by browsers, so on an HTTP page there
+is nothing to assess — that check reports `could_not_determine`, not a failure
+and not a pass (ADR-021). The HTTPS finding is the one that matters there.
+
+## Deliberately limited
+
+- **CSP parsing is structural.** It reads directives and source lists; it does
+  not evaluate whether a policy is *correct* for an application, model nonce and
+  hash fallback chains, or attempt bypass analysis.
+- **Only the analyzed response is seen.** Cookies set later by JavaScript,
+  headers on other routes, and per-endpoint policies are invisible.
+- **No TLS inspection.** Certificate chain, protocol version and cipher suite
+  are not examined; a failed handshake surfaces as a Phase 2 `tls_error`.
+- **No active testing of any kind**, which is what keeps this analyzer safe to
+  point at a site that did not ask to be scanned.
+
+---
+
 # CHANGE LOG
 
 ## Initial version
@@ -1759,6 +1847,25 @@ two directives which remove a site from search entirely are `critical`; that
 Phase 2 was extended to support this: a `downloadMediaTypes` option, since the
 client previously downloaded HTML bodies only, and the response field `html`
 was renamed `body` to match what it now carries.
+
+## Phase 6 — Security Analyzer
+
+Added ADR-046.
+
+It records the rule that keeps this section honest — the analyzer reports
+configuration and never states that a site is secure or that a vulnerability
+exists — enforced by a test scanning every finding's text for safety claims. It
+also records that cookie **values** are never captured, because the report
+reaches logs, an API response and eventually an AI prompt; that disclosure stays
+`minor` because it is not itself a weakness; and that frame protection is one
+finding rather than two, since `frame-ancestors` supersedes `X-Frame-Options`.
+
+A shared finding builder was extracted to `lib/analysis/finding-builder.ts` so
+Phase 6 did not duplicate Phase 5's helpers. Phase 5 was left untouched.
+
+An SSRF review of the existing retrieval and browser layers was carried out
+alongside this phase; see the Phase 6 section of `docs/IMPLEMENTATION.md` for
+what it confirmed and the one weakness it found.
 
 The Phase 3 constraint in `docs/IMPLEMENTATION.md` was amended: it previously
 read "the browser is network-isolated", which the implementation does not
