@@ -71,6 +71,7 @@ export function couldNotDetermine(
   id: string,
   reason: string,
   explanation: string,
+  recommendation: string,
 ): Finding {
   return seoFinding({
     id,
@@ -78,6 +79,7 @@ export function couldNotDetermine(
     status: "could_not_determine",
     evidence: [httpEvidence(reason)],
     explanation,
+    recommendation,
   });
 }
 

@@ -109,7 +109,10 @@ export interface Finding {
   /**
    * What the site owner should do about it.
    *
-   * Absent for `pass` and `info` findings, which require no action.
+   * Optional in this shared type, because a category may have a finding with
+   * genuinely nothing to say. Individual analyzers may be stricter: Phase 5
+   * supplies one on **every** finding, including passes, where it says what to
+   * keep doing as the page changes.
    */
   readonly recommendation?: string;
 }

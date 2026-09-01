@@ -1009,7 +1009,13 @@ Rules worth knowing (ADR-045):
   sitemap is a `warn`. A broken promise is worse than no promise.
 - site files that were not retrieved report `could_not_determine`, never a pass.
 
-Validation: 572 tests pass, 79 of them for this phase. The site-file tests run
+Every finding carries evidence **and** a recommendation, including passes and
+`could_not_determine` — stricter than the shared `Finding` type, which permits a
+pass to omit one. A test drives every check down its failure, warning and
+could-not-determine branches and asserts the rule across all 47 findings by
+name.
+
+Validation: 603 tests pass, 110 of them for this phase. The site-file tests run
 against a real local server.
 
 Phase 2 was extended to support this: a `downloadMediaTypes` option, and the

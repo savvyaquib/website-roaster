@@ -1624,6 +1624,19 @@ One case escalates: a sitemap **declared in robots.txt but not served** is a
 `fail`, where simply having no sitemap is a `warn`. A broken promise is worse
 than no promise.
 
+### Every finding carries a recommendation
+
+Stricter than the shared `Finding` type, which permits a `pass` to omit one.
+
+A passing check still has something worth saying — what to keep doing as the
+page changes — and a report where some rows have advice and others do not reads
+as though the analyzer ran out of things to say. A `could_not_determine`
+finding recommends how to establish the answer.
+
+This is enforced by a test that drives every check down its failure, warning and
+could-not-determine branches, so the rule is proven across the finding
+vocabulary rather than on one happy path.
+
 ### An empty `alt` is not a defect
 
 `alt=""` is the correct way to mark a decorative image. Phase 4 preserves the

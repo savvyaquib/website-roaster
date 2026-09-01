@@ -27,6 +27,8 @@ export function checkImageAlt(page: PageData): Finding[] {
         status: "pass",
         evidence: [domEvidence("The page contains no <img> elements.")],
         explanation: "There are no images requiring alternative text.",
+        recommendation:
+          'Give any image added later an alt attribute, or alt="" if it is decorative.',
       }),
     ];
   }
@@ -46,6 +48,8 @@ export function checkImageAlt(page: PageData): Finding[] {
           ),
         ],
         explanation: "Every image declares alternative text or is marked decorative.",
+        recommendation:
+          'Keep describing new images in alt, and keep marking decorative ones with alt="".',
       }),
     ];
   }
@@ -144,6 +148,7 @@ export function checkInternalLinks(page: PageData): Finding[] {
       status: "pass",
       evidence: [counts],
       explanation: "The page links to other pages on the site.",
+      recommendation: "Keep linking to related pages as the site grows.",
     }),
   ];
 }
@@ -210,6 +215,7 @@ export function checkStructuredData(page: PageData): Finding[] {
         domEvidence(`The page contains ${blocks.length} valid JSON-LD block(s).`),
       ],
       explanation: "The page declares structured data and it parses correctly.",
+      recommendation: "Keep the JSON-LD in step with what the page actually shows.",
     }),
   ];
 }

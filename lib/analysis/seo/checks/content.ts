@@ -80,6 +80,7 @@ export function checkTitle(page: PageData): Finding[] {
       status: "pass",
       evidence: [measured],
       explanation: "The page has a title of a reasonable length.",
+      recommendation: `Keep the title between ${TITLE_LENGTH.min} and ${TITLE_LENGTH.max} characters as the page changes.`,
     }),
   ];
 }
@@ -156,6 +157,7 @@ export function checkMetaDescription(page: PageData): Finding[] {
       status: "pass",
       evidence: [measured],
       explanation: "The page has a meta description of a reasonable length.",
+      recommendation: `Keep the description between ${META_DESCRIPTION_LENGTH.min} and ${META_DESCRIPTION_LENGTH.max} characters as the page changes.`,
     }),
   ];
 }
@@ -226,6 +228,7 @@ export function checkH1(page: PageData): Finding[] {
         domEvidence("The page has exactly one <h1>.", preview(only?.text ?? "")),
       ],
       explanation: "The page has a single, non-empty top-level heading.",
+      recommendation: "Keep exactly one <h1> as the page evolves.",
     }),
   ];
 }
@@ -287,6 +290,7 @@ export function checkHeadingStructure(page: PageData): Finding[] {
         domEvidence(`The page has ${headings.length} heading(s) in a consistent order.`),
       ],
       explanation: "Heading levels descend without skipping.",
+      recommendation: "Keep heading levels in order as new sections are added.",
     }),
   ];
 }

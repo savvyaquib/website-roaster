@@ -21,6 +21,7 @@ export function checkRobotsTxt(siteFiles: SiteFiles | undefined): Finding[] {
         "seo.robots_txt.not_checked",
         "robots.txt was not retrieved.",
         "Whether this site has a robots.txt could not be established, so nothing is claimed about it either way.",
+        "Re-run the analysis with site-file retrieval enabled, or open /robots.txt yourself to confirm.",
       ),
     ];
   }
@@ -31,6 +32,7 @@ export function checkRobotsTxt(siteFiles: SiteFiles | undefined): Finding[] {
         "seo.robots_txt.unreachable",
         `Requesting ${result.url} failed: ${result.error}.`,
         "robots.txt could not be retrieved, so whether crawlers are blocked is unknown.",
+        "Check that /robots.txt is reachable, then re-run the analysis.",
       ),
     ];
   }
@@ -78,6 +80,8 @@ export function checkRobotsTxt(siteFiles: SiteFiles | undefined): Finding[] {
       status: "pass",
       evidence: [evidence],
       explanation: "robots.txt is present and does not block the whole site.",
+      recommendation:
+        "Keep robots.txt in step with the paths you want crawled, and keep the sitemap declaration current.",
     }),
   ];
 }
@@ -91,6 +95,7 @@ export function checkSitemap(siteFiles: SiteFiles | undefined): Finding[] {
         "seo.sitemap.not_checked",
         "No sitemap lookup was performed.",
         "Whether this site publishes a sitemap could not be established.",
+        "Re-run the analysis with site-file retrieval enabled, or open /sitemap.xml yourself to confirm.",
       ),
     ];
   }
@@ -110,6 +115,7 @@ export function checkSitemap(siteFiles: SiteFiles | undefined): Finding[] {
         "seo.sitemap.unreachable",
         `Requesting ${result.url} failed: ${result.error}.`,
         "The sitemap could not be retrieved, so whether one exists is unknown.",
+        "Check that the sitemap URL is reachable, then re-run the analysis.",
       ),
     ];
   }
@@ -148,6 +154,7 @@ export function checkSitemap(siteFiles: SiteFiles | undefined): Finding[] {
         declaredEvidence,
       ],
       explanation: "A sitemap is published and reachable.",
+      recommendation: "Keep the sitemap up to date as pages are added or removed.",
     }),
   ];
 }

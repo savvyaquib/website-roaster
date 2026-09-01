@@ -40,6 +40,22 @@ function ids(findings: readonly Finding[]): string[] {
   return findings.map((finding) => finding.id);
 }
 
+/**
+ * Strip the JSON-LD block by string surgery rather than a regex.
+ *
+ * A multiline regex here is easy to get subtly wrong, and a variant that
+ * silently fails to remove anything would test the opposite of what it claims.
+ */
+function withoutJsonLd(html: string): string {
+  const start = html.indexOf('<script type="application/ld+json">');
+  if (start === -1) throw new Error("fixture has no JSON-LD to remove");
+
+  const end = html.indexOf("</script>", start);
+  if (end === -1) throw new Error("fixture JSON-LD is unterminated");
+
+  return html.slice(0, start) + html.slice(end + "</script>".length);
+}
+
 const goodSiteFiles: SiteFiles = {
   robotsTxt: {
     url: "https://example.com/robots.txt",
@@ -75,12 +91,10 @@ describe("the analyzer contract", () => {
     expect(findings.every((finding) => finding.explanation.length > 0)).toBe(true);
   });
 
-  it("recommends an action on everything that is not a pass", () => {
-    const actionable = findings.filter(
-      (finding) => finding.status === "fail" || finding.status === "warn",
-    );
-
-    expect(actionable.every((finding) => (finding.recommendation ?? "").length > 0)).toBe(
+  it("gives every finding a recommendation", () => {
+    // Stricter than the shared Finding type, which allows a pass to omit one:
+    // a passing check still says what to keep doing as the page changes.
+    expect(findings.every((finding) => (finding.recommendation ?? "").length > 0)).toBe(
       true,
     );
   });
@@ -103,6 +117,261 @@ describe("the analyzer contract", () => {
 
   it("passes every check for a well-formed page", () => {
     expect(findings.filter((finding) => finding.status !== "pass")).toEqual([]);
+  });
+});
+
+describe("every finding, on every path", () => {
+  // The contract tests above only exercise a page where everything passes.
+  // These variants drive each check down its failure, warning and
+  // could-not-determine branches, so the evidence and recommendation rules are
+  // proven for the whole finding vocabulary rather than one happy path.
+  const variants: Array<[string, string, SiteFiles | undefined]> = [
+    ["a good page with site files", GOOD_PAGE, goodSiteFiles],
+    ["a good page without site files", GOOD_PAGE, undefined],
+    ["an empty document", "", undefined],
+    ["a bare document", "<html><head></head><body><p>x</p></body></html>", undefined],
+    [
+      "a noindex page",
+      GOOD_PAGE.replace("<title>", '<meta name="robots" content="noindex"><title>'),
+      goodSiteFiles,
+    ],
+    [
+      "a nofollow page",
+      GOOD_PAGE.replace("<title>", '<meta name="robots" content="nofollow"><title>'),
+      goodSiteFiles,
+    ],
+    [
+      "an over-long title and description",
+      GOOD_PAGE.replace(
+        "<title>Excellent Widgets — Handmade in Britain</title>",
+        `<title>${"t".repeat(120)}</title>`,
+      ).replace(/content="A carefully[^"]*"/, `content="${"d".repeat(300)}"`),
+      goodSiteFiles,
+    ],
+    [
+      "a short title and description",
+      GOOD_PAGE.replace(
+        "<title>Excellent Widgets — Handmade in Britain</title>",
+        "<title>Hi</title>",
+      ).replace(/content="A carefully[^"]*"/, 'content="Short."'),
+      goodSiteFiles,
+    ],
+    [
+      "an empty title",
+      GOOD_PAGE.replace(new RegExp("<title>[^<]*</title>"), "<title></title>"),
+      undefined,
+    ],
+    [
+      "an empty description tag",
+      GOOD_PAGE.replace(/<meta name="description"[^>]*>/, '<meta name="description">'),
+      undefined,
+    ],
+    [
+      "several h1 elements",
+      GOOD_PAGE.replace("<h2>Why ours</h2>", "<h1>Second</h1>"),
+      undefined,
+    ],
+    [
+      "an empty h1",
+      GOOD_PAGE.replace("<h1>Excellent widgets</h1>", "<h1></h1>"),
+      undefined,
+    ],
+    [
+      "a skipped heading level",
+      GOOD_PAGE.replace("<h2>Why ours</h2>", "<h5>Why ours</h5>"),
+      undefined,
+    ],
+    ["images with no alt", GOOD_PAGE.replace(/ alt="[^"]*"/g, ""), undefined],
+    ["no images", GOOD_PAGE.replace(/<img[^>]*>/g, ""), undefined],
+    ["no links", GOOD_PAGE.replace(new RegExp("<a[^>]*>.*?</a>", "g"), ""), undefined],
+    [
+      "only external links",
+      GOOD_PAGE.replace('href="/about"', 'href="https://elsewhere.example/x"'),
+      undefined,
+    ],
+    [
+      "a link with no text",
+      GOOD_PAGE.replace(
+        '<a href="/about">About us</a>',
+        '<a href="/about"></a><a href="/b">B</a>',
+      ),
+      undefined,
+    ],
+    ["no structured data", withoutJsonLd(GOOD_PAGE), undefined],
+    [
+      "broken structured data",
+      GOOD_PAGE.replace(
+        '{"@context":"https://schema.org","@type":"Organization"}',
+        "{nope",
+      ),
+      undefined,
+    ],
+    ["no canonical", GOOD_PAGE.replace(/<link rel="canonical"[^>]*>/, ""), undefined],
+    [
+      "a cross-origin canonical",
+      GOOD_PAGE.replace('href="https://example.com/"', 'href="https://other.example/"'),
+      undefined,
+    ],
+    ["no language", GOOD_PAGE.replace('<html lang="en">', "<html>"), undefined],
+    ["no viewport", GOOD_PAGE.replace(/<meta name="viewport"[^>]*>/, ""), undefined],
+    [
+      "a fixed-width viewport",
+      GOOD_PAGE.replace(
+        'content="width=device-width, initial-scale=1"',
+        'content="width=1024"',
+      ),
+      undefined,
+    ],
+    [
+      "a site-wide crawler block",
+      GOOD_PAGE,
+      {
+        ...goodSiteFiles,
+        robotsTxt: {
+          ...goodSiteFiles.robotsTxt!,
+          body: "User-agent: *\nDisallow: /",
+        },
+      },
+    ],
+    [
+      "a missing robots.txt",
+      GOOD_PAGE,
+      {
+        ...goodSiteFiles,
+        robotsTxt: {
+          url: "https://example.com/robots.txt",
+          status: 404,
+          found: false,
+          body: null,
+          error: null,
+        },
+      },
+    ],
+    [
+      "an unreachable robots.txt",
+      GOOD_PAGE,
+      {
+        robotsTxt: {
+          url: "https://example.com/robots.txt",
+          status: null,
+          found: false,
+          body: null,
+          error: "timeout",
+        },
+        sitemap: null,
+        declaredSitemaps: [],
+      },
+    ],
+    [
+      "a declared but missing sitemap",
+      GOOD_PAGE,
+      {
+        ...goodSiteFiles,
+        sitemap: {
+          url: "https://example.com/sitemap.xml",
+          status: 404,
+          found: false,
+          body: null,
+          error: null,
+        },
+      },
+    ],
+    [
+      "an unreachable sitemap",
+      GOOD_PAGE,
+      {
+        ...goodSiteFiles,
+        sitemap: {
+          url: "https://example.com/sitemap.xml",
+          status: null,
+          found: false,
+          body: null,
+          error: "dns_failure",
+        },
+      },
+    ],
+  ];
+
+  it.each(variants)(
+    "gives every finding evidence and a recommendation for %s",
+    (_label, html, siteFiles) => {
+      const findings = analyze(html, siteFiles);
+
+      expect(findings.length).toBeGreaterThan(0);
+
+      for (const finding of findings) {
+        expect(finding.evidence.length, `${finding.id} has no evidence`).toBeGreaterThan(
+          0,
+        );
+        expect(
+          (finding.recommendation ?? "").length,
+          `${finding.id} has no recommendation`,
+        ).toBeGreaterThan(0);
+        expect(finding.explanation.length).toBeGreaterThan(0);
+        expect(finding.category).toBe("seo");
+      }
+    },
+  );
+
+  it("actually reaches every finding the checks can emit", () => {
+    // Named rather than counted. A count still passes when a variant silently
+    // stops exercising the branch it claims to, which is exactly the failure
+    // this guard exists to catch.
+    const seen = new Set(
+      variants.flatMap(([, html, files]) => ids(analyze(html, files))),
+    );
+
+    const expected = [
+      "seo.title.missing",
+      "seo.title.empty",
+      "seo.title.too_long",
+      "seo.title.too_short",
+      "seo.title.ok",
+      "seo.description.missing",
+      "seo.description.empty",
+      "seo.description.too_long",
+      "seo.description.too_short",
+      "seo.description.ok",
+      "seo.canonical.missing",
+      "seo.canonical.cross_origin",
+      "seo.canonical.ok",
+      "seo.robots_meta.absent",
+      "seo.robots_meta.noindex",
+      "seo.robots_meta.nofollow",
+      "seo.language.missing",
+      "seo.language.ok",
+      "seo.viewport.missing",
+      "seo.viewport.no_device_width",
+      "seo.viewport.ok",
+      "seo.h1.missing",
+      "seo.h1.multiple",
+      "seo.h1.empty",
+      "seo.h1.ok",
+      "seo.headings.none",
+      "seo.headings.skipped_level",
+      "seo.headings.ok",
+      "seo.images.none",
+      "seo.images.missing_alt",
+      "seo.images.alt_ok",
+      "seo.links.none",
+      "seo.links.no_internal",
+      "seo.links.empty_text",
+      "seo.links.ok",
+      "seo.structured_data.absent",
+      "seo.structured_data.invalid",
+      "seo.structured_data.ok",
+      "seo.robots_txt.not_checked",
+      "seo.robots_txt.unreachable",
+      "seo.robots_txt.missing",
+      "seo.robots_txt.disallows_all",
+      "seo.robots_txt.ok",
+      "seo.sitemap.not_checked",
+      "seo.sitemap.unreachable",
+      "seo.sitemap.missing",
+      "seo.sitemap.ok",
+    ];
+
+    expect(expected.filter((id) => !seen.has(id))).toEqual([]);
   });
 });
 

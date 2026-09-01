@@ -55,6 +55,8 @@ export function checkCanonical(page: PageData): Finding[] {
       status: "pass",
       evidence: [evidence],
       explanation: "The page declares a canonical URL.",
+      recommendation:
+        "Keep the canonical pointing at this page's preferred URL if the URL structure changes.",
     }),
   ];
 }
@@ -76,6 +78,8 @@ export function checkRobotsMeta(page: PageData): Finding[] {
         evidence: [domEvidence("There is no robots meta tag restricting indexing.")],
         explanation:
           "With no robots meta tag, the page is indexable by default, which is normally what a public page wants.",
+        recommendation:
+          "No change needed. Avoid adding a noindex directive unless this page should be hidden from search.",
       }),
     ];
   }
@@ -124,6 +128,8 @@ export function checkRobotsMeta(page: PageData): Finding[] {
       status: "pass",
       evidence: [evidence],
       explanation: "The robots meta tag does not block indexing.",
+      recommendation:
+        "Keep the robots directives free of noindex unless this page should be hidden from search.",
     }),
   ];
 }
@@ -151,6 +157,7 @@ export function checkLanguage(page: PageData): Finding[] {
       status: "pass",
       evidence: [domEvidence("The page declares a language.", page.htmlLanguage)],
       explanation: "The document language is declared.",
+      recommendation: "Keep the lang attribute accurate if the page is translated.",
     }),
   ];
 }
@@ -195,6 +202,7 @@ export function checkViewport(page: PageData): Finding[] {
       status: "pass",
       evidence: [evidence],
       explanation: "The page declares a device-width viewport.",
+      recommendation: "Keep width=device-width in the viewport declaration.",
     }),
   ];
 }
