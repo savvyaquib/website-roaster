@@ -1766,6 +1766,120 @@ and not a pass (ADR-021). The HTTPS finding is the one that matters there.
 
 ---
 
+# ADR-047 — Accessibility Engine And Result Normalization
+
+## Status
+
+Accepted
+
+## Decision
+
+### axe-core, and the standard is not reimplemented
+
+**axe-core** is the audit engine (ADR-007: do not rebuild mature auditing
+logic). It is the engine behind most browser accessibility extensions and most
+CI accessibility tooling, it has no dependencies of its own, and it ships the
+entire engine as an injectable source string, so no file has to be resolved on
+disk or served to the page.
+
+Alternatives considered: **Lighthouse's accessibility category**, which runs
+axe underneath and would arrive with a whole browser-audit harness this phase
+does not need; and **pa11y**, which wraps engines rather than being one.
+
+This phase's job is to carry the engine's verdicts across without losing the
+trail back to them — not to have opinions about WCAG.
+
+### Running and normalizing are separate
+
+`runAxe` loads the page and produces an audit. `normalizeAxeResults` is pure and
+turns an audit into findings.
+
+The split matters because normalization is where an external tool's vocabulary
+becomes ours, and a silent mismatch there would be invisible. Keeping it pure
+means it is tested exhaustively with fixtures instead of a browser.
+
+`runAxe` reuses Phase 3's session management and request guard rather than
+building its own browser arrangement, so the security boundary and cleanup
+behaviour are the ones already reviewed (ADR-042).
+
+### The engine's types are re-declared, not imported
+
+`types.ts` declares only the fields the normalizer reads, structurally satisfied
+by axe's real output.
+
+This keeps the normalizer free of any dependency on axe — so it can be tested
+with plain objects, and swapping the engine later would touch the runner rather
+than the normalizer. axe's own `Result` type carries a dozen fields this phase
+never looks at, and satisfying it in a fixture would be noise.
+
+### What is preserved
+
+Phase 7's acceptance criterion is that findings trace back to actual audit
+evidence, which is only true if the trail survives normalization. Every finding
+keeps:
+
+- the **rule identifier**, as `accessibility.axe.<rule-id>`;
+- the **severity** — the engine's `critical`/`serious`/`moderate`/`minor` map
+  onto ours one-to-one. That is not luck: the severity names in
+  `lib/types/finding.ts` were chosen to match this vocabulary precisely so this
+  phase needs no lossy translation table (ADR-029);
+- the **affected elements**, as selectors plus their markup;
+- the engine's **description** as the explanation, its **failure summary** as
+  the recommendation, and a link to its **documentation**.
+
+An unrecognised or absent impact becomes `moderate` rather than being dropped:
+the engine found something worth reporting, and guessing low would quietly
+demote a real problem.
+
+### `incomplete` becomes `could_not_determine`
+
+axe reports rules it could not decide. That maps onto ADR-021's
+`could_not_determine` exactly.
+
+Automation genuinely cannot settle some checks — whether alt text is
+*meaningful*, for instance. Reporting those as passes would be the single most
+misleading thing this phase could do, so they are reported as needing a human.
+
+### Passes collapse into one finding
+
+A typical page passes forty or more rules. One finding each would swamp the
+report and bury the failures, so passes are summarised into a single finding
+with the rule identifiers kept as evidence.
+
+### Automated testing is a floor, not a ceiling
+
+The analyzer never reports that a page **is accessible**. Automated tooling
+reaches only a fraction of the success criteria: it cannot judge reading order,
+whether a custom control works with a screen reader, or whether alt text says
+anything useful.
+
+The pass finding therefore says "these automated checks found no problem" and
+states that this is not a claim of accessibility. Same reasoning as ADR-046 — a
+section that reads as a clean bill of health invites someone to stop looking.
+
+### A failed audit is a finding, not a missing section
+
+When the audit cannot run, the analyzer returns a single `could_not_determine`
+finding explaining why.
+
+Dropping the section would let a reader assume accessibility was fine. Each
+failure code has its own explanation, because a blocked URL and a crashed
+browser are different events — and a strict Content-Security-Policy blocking the
+engine's injection is called out by name, since that is the most likely cause on
+a well-configured site and would otherwise look like a bug in this tool.
+
+## Deliberately limited
+
+- **One viewport, one page state.** The audit runs at the desktop viewport after
+  load. Problems that appear only in a mobile layout, or behind an interaction,
+  are not seen.
+- **Element markup enters the report.** Snippets come from an untrusted page and
+  are length-capped, but any UI rendering them must escape them.
+- **No manual-check guidance.** The report does not enumerate what a human
+  should test beyond the undecided rules the engine surfaces.
+
+---
+
 # CHANGE LOG
 
 ## Initial version
@@ -1866,6 +1980,19 @@ Phase 6 did not duplicate Phase 5's helpers. Phase 5 was left untouched.
 An SSRF review of the existing retrieval and browser layers was carried out
 alongside this phase; see the Phase 6 section of `docs/IMPLEMENTATION.md` for
 what it confirmed and the one weakness it found.
+
+## Phase 7 — Accessibility Analyzer
+
+Added ADR-047.
+
+It records axe-core as the engine and the rule that the standard is not
+reimplemented; the split between a browser-bound runner and a pure normalizer;
+that the engine's severity vocabulary maps onto ours one-to-one **by design**,
+not by luck (ADR-029); that axe's `incomplete` becomes `could_not_determine`,
+because reporting an undecidable check as a pass would be the most misleading
+thing this phase could do; that passes collapse into one finding; and that the
+analyzer never claims a page is accessible, since automation reaches only a
+fraction of the success criteria.
 
 The Phase 3 constraint in `docs/IMPLEMENTATION.md` was amended: it previously
 read "the browser is network-isolated", which the implementation does not

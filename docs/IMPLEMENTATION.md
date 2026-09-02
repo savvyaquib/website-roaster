@@ -812,7 +812,8 @@ Phase 3 — ✅ Complete
 Phase 4 — ✅ Complete
 Phase 5 — ✅ Complete
 Phase 6 — ✅ Complete
-Phase 7 — ⏳ Not started
+Phase 7 — ✅ Complete
+Phase 8 — ⏳ Not started
 ...
 ```
 
@@ -1097,6 +1098,46 @@ Not delivered, deliberately:
 - no active testing of any kind, which is what keeps this safe to point at a
   site that did not ask to be scanned
 - no assessment of routes other than the one analyzed
+
+## Phase 7 — Complete
+
+Delivered in `lib/analysis/accessibility/`:
+
+- `runAxe(url, options)` — loads the page and runs **axe-core 4.13** in it.
+  Reuses Phase 3's session and request guard, so the security boundary and
+  cleanup are the ones already reviewed. Always closes the browser.
+- `normalizeAxeResults(results)` — **pure**. Audit in, `Finding[]` out.
+- `analyzeAccessibility({ audit })` — returns findings, and turns a failed or
+  missing audit into a single `could_not_determine` finding rather than
+  dropping the section.
+
+Preserved through normalization: rule identifier, severity, affected elements
+(selectors and markup), the engine's description, its failure summary, and a
+link to its documentation.
+
+Rules worth knowing (ADR-047):
+
+- the engine's `critical`/`serious`/`moderate`/`minor` map onto ours
+  one-to-one **by design** — those names were chosen in Phase 0 for this
+  reason (ADR-029), so no lossy table is needed.
+- axe's `incomplete` becomes `could_not_determine`. Automation cannot settle
+  whether alt text is *meaningful*; reporting that as a pass would be the most
+  misleading thing this phase could do.
+- passes collapse into one finding. A page passes forty or more rules and one
+  finding each would bury the failures.
+- the analyzer **never states that a page is accessible**. Automated testing
+  reaches only a fraction of the success criteria.
+
+Validation: 786 tests pass, 73 of them for this phase. Normalization is covered
+with fixtures; a separate end-to-end test runs the real engine in real Chromium
+against a deliberately broken page and asserts the violations normalize
+correctly.
+
+Not delivered, deliberately:
+
+- no scoring — Phase 12
+- no mobile-viewport audit; the audit runs once, at the desktop viewport
+- no manual-check guidance beyond the undecided rules the engine surfaces
 
 ---
 
