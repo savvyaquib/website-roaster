@@ -813,7 +813,8 @@ Phase 4 — ✅ Complete
 Phase 5 — ✅ Complete
 Phase 6 — ✅ Complete
 Phase 7 — ✅ Complete
-Phase 8 — ⏳ Not started
+Phase 8 — ✅ Complete
+Phase 9 — ⏳ Not started
 ...
 ```
 
@@ -1138,6 +1139,51 @@ Not delivered, deliberately:
 - no scoring — Phase 12
 - no mobile-viewport audit; the audit runs once, at the desktop viewport
 - no manual-check guidance beyond the undecided rules the engine surfaces
+
+## Phase 8 — Complete
+
+Delivered in `lib/analysis/performance/`:
+
+- `runLighthouse(url, options)` — runs **Lighthouse 13** against the page,
+  attached to the Phase 3 browser over an explicit DevTools port. Always closes
+  the browser.
+- `extractMeasurements(report)` — **pure**. Raw numbers, in the engine's units.
+- `normalizeLighthouseReport(...)` — **pure**. Findings.
+- `analyzePerformance({ audit })` — returns `{ measurements, findings }`.
+
+Collected raw: LCP, CLS, TBT, FCP, Speed Index, TTI, server response time,
+total byte weight, request count, per-type resource breakdown, JavaScript
+bootup time, main-thread work, unused JavaScript bytes, image savings,
+render-blocking count and cost — plus engine name, version and measured URL so
+any number can be traced to what produced it.
+
+Rules worth knowing (ADR-048):
+
+- **raw and derived are separate return values.** `measurements` contains no
+  score of any kind, ours or the engine's, and a test asserts none leaks in
+  (ADR-012).
+- the engine's 0-1 score decides **finding status only**. The category score is
+  Phase 12's, computed from the raw measurements under our weights (ADR-002).
+- **INP is present as a field and is always `null`**, with the reason attached
+  and TBT reported beside it as the lab proxy. INP needs real users; a
+  synthetic load has none, so any number here would be invented (ADR-030).
+- a failed audit yields **empty** measurements, never zeroed ones. A page whose
+  weight was never measured must not look like a page that weighs nothing.
+- audit identifiers were verified against a real report. Lighthouse 13 replaced
+  `render-blocking-resources`, `uses-optimized-images`, `uses-long-cache-ttl`
+  and `uses-text-compression` with `*-insight` audits; the old names would have
+  produced silent nulls.
+
+Validation: 862 tests pass, 76 of them for this phase. Extraction and
+normalization are covered with fixtures; a gated end-to-end test runs the real
+engine against a real page and asserts every named measurement arrives.
+
+Not delivered, deliberately:
+
+- no scoring — Phase 12
+- lab data only; no field data or real-user monitoring
+- one run, unaveraged — Lighthouse metrics vary between runs
+- desktop only; no mobile performance run
 
 ---
 

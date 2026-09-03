@@ -81,6 +81,15 @@ export interface LaunchSessionOptions {
   readonly headless?: boolean;
   /** Budget for the launch itself, separate from any page navigation. */
   readonly launchTimeoutMs?: number;
+  /**
+   * Extra Chromium flags, appended to the hardening set.
+   *
+   * Phase 8 uses this to open a DevTools port for Lighthouse, which speaks raw
+   * CDP that Playwright does not expose (ADR-033). The sandbox flags are not
+   * overridable through it: these are appended, and Chromium takes the first
+   * occurrence of a flag, so the defaults above win on any conflict.
+   */
+  readonly extraArgs?: readonly string[];
 }
 
 export const DEFAULT_LAUNCH_TIMEOUT_MS = 30_000;
@@ -103,7 +112,7 @@ export async function launchSession(
   try {
     browser = await launcher({
       headless: options.headless ?? true,
-      args: CHROMIUM_ARGS,
+      args: [...CHROMIUM_ARGS, ...(options.extraArgs ?? [])],
       timeout: options.launchTimeoutMs ?? DEFAULT_LAUNCH_TIMEOUT_MS,
     });
   } catch (error) {

@@ -1880,6 +1880,106 @@ a well-configured site and would otherwise look like a bug in this tool.
 
 ---
 
+# ADR-048 — Performance Engine And The Raw/Derived Boundary
+
+## Status
+
+Accepted
+
+## Decision
+
+### Lighthouse, attached to the Phase 3 browser
+
+**Lighthouse 13** is the performance engine (ADR-007, ADR-033). It supplies
+every measurement this phase needs from one throttled load, and rebuilding that
+harness would be exactly the mature auditing logic ADR-007 says not to rebuild.
+
+ADR-033 requires it to attach to the same browser process while performing its
+**own** page load — reusing a warmed page would silently corrupt every metric.
+Playwright does not expose a raw DevTools port, so the browser is launched with
+an explicit `--remote-debugging-port` and the engine connects to that. This is
+why `launchSession` gained an `extraArgs` option; the hardening flags are
+appended to, never replaced, and the sandbox is still never disabled.
+
+### Audit identifiers were verified, not assumed
+
+Lighthouse 13 replaced several long-standing opportunity audits with `*-insight`
+audits. `render-blocking-resources`, `uses-optimized-images`,
+`uses-long-cache-ttl` and `uses-text-compression` **no longer exist**; the
+equivalents are `render-blocking-insight`, `image-delivery-insight`,
+`cache-insight` and `document-latency-insight`.
+
+The identifiers in `AUDIT_IDS` were read off a real report before being written
+down. Had they been taken from older documentation, every one of those
+measurements would have been silently `null` and the tests would still have
+passed.
+
+### Raw measurements and findings are separate return values
+
+`analyzePerformance` returns `{ measurements, findings }`.
+
+`measurements` holds what the engine observed, in its own units, unrounded and
+uncombined. It contains **no score of any kind** — not ours, and not the
+engine's — and there is a test asserting no score leaks into it.
+
+That separation is ADR-012. Raw data must survive so the scoring weights can
+change without re-running the audit, and so a wrong score can be debugged
+against what was actually measured.
+
+### The engine's score decides finding status, not the category score
+
+Lighthouse scores each audit 0-1. That is used here exactly as axe's `impact` is
+used in Phase 7: to decide whether a finding passes, warns or fails.
+
+It is **not** the Website Roaster score. Phase 12 computes that from the raw
+measurements under weights we control (ADR-002). Severity, when an audit fails,
+is fixed per audit rather than derived from the score — how much a problem
+matters depends on what it is, not on how far below a threshold it landed.
+
+An audit with a `null` score is informational: the engine reported a number
+without judging it. That becomes `could_not_determine`, not a pass.
+
+### INP is collected as a field and is always null
+
+The phase specification lists INP. It is present in `PerformanceMeasurements` as
+a first-class field, and its value is always `null`, carrying
+`inpUnavailableReason` alongside it.
+
+INP is a **field metric**: it measures response to real user interactions, so it
+requires real users. A synthetic load has nobody to interact with the page, and
+any number produced here would be invented. ADR-030 established this; this phase
+implements it by making the gap explicit rather than omitting the metric, and by
+reporting Total Blocking Time as the established lab proxy in the same finding.
+
+A `could_not_determine` finding says so in the report, so a reader cannot mistake
+the silence for a good result (ADR-021).
+
+### A failed audit yields empty measurements, never zeroed ones
+
+Every field `null`, plus one `could_not_determine` finding. A page whose weight
+was never measured must not look like a page that weighs nothing.
+
+## Consequences
+
+- This is a fourth page load per analysis, after Phase 3's two renderings and
+  Phase 7's audit. ADR-033 accepts the cost; it is worth revisiting when the
+  phases are orchestrated together in Phase 16.
+- The engine's audit identifiers are a version-coupled surface. An end-to-end
+  test runs the real engine and asserts the measurements still arrive, so an
+  engine upgrade that renames an audit fails loudly rather than silently
+  producing nulls.
+
+## Deliberately limited
+
+- **Lab data only.** No field data, no CrUX, no real-user monitoring.
+- **One run.** Lighthouse metrics vary between runs on the same page; nothing
+  here averages several, so a single result should not be read as precise.
+- **Desktop, with the engine's default throttling.** No mobile performance run.
+- **The performance category only.** Lighthouse's other categories are not run;
+  accessibility is Phase 7's job with a lighter engine.
+
+---
+
 # CHANGE LOG
 
 ## Initial version
@@ -1993,6 +2093,23 @@ because reporting an undecidable check as a pass would be the most misleading
 thing this phase could do; that passes collapse into one finding; and that the
 analyzer never claims a page is accessible, since automation reaches only a
 fraction of the success criteria.
+
+## Phase 8 — Performance Analyzer
+
+Added ADR-048.
+
+It records Lighthouse 13 attached to the Phase 3 browser over an explicit
+DevTools port; that the audit identifiers were **verified against a real
+report** rather than taken from documentation, because Lighthouse 13 replaced
+four legacy audits with `*-insight` equivalents and using the old names would
+have produced silent nulls; that raw measurements and findings are separate
+return values with no score in either (ADR-012); that the engine's 0-1 score
+decides finding status but never the category score (ADR-002); and that INP is
+present as a field whose value is always `null`, with the reason attached and
+TBT reported as the lab proxy (ADR-030).
+
+`launchSession` gained an `extraArgs` option so the DevTools port could be
+opened. The hardening flags are appended to, never replaced.
 
 The Phase 3 constraint in `docs/IMPLEMENTATION.md` was amended: it previously
 read "the browser is network-isolated", which the implementation does not
