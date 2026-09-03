@@ -1980,6 +1980,93 @@ was never measured must not look like a page that weighs nothing.
 
 ---
 
+# ADR-049 — Mobile Signals, And Where The Heuristic Line Sits
+
+## Status
+
+Accepted
+
+## Decision
+
+### A browser probe plus a pure analyzer
+
+`collectMobileSignals` renders at a phone viewport and measures element
+geometry in the page, because geometry only exists once the browser has laid
+the page out. `analyzeMobile` is pure and decides what any of it means.
+
+The probe reuses Phase 3's session, request guard and mobile viewport profile,
+so the security boundary, the device definition and the cleanup behaviour are
+the ones already reviewed. The two phases therefore agree about what "mobile"
+means rather than each having an opinion.
+
+### Where the measured/heuristic line is drawn
+
+This is the phase ADR-009 was written for, so the line is explicit.
+
+**Measured** — facts about the rendered page, reported as such:
+
+- horizontal overflow (`scrollWidth` exceeded the layout width);
+- the viewport meta tag: absent, or present and restrictive;
+- tap targets below the **WCAG 2.2 floor** of 24x24 CSS pixels;
+- elements hiding their own content behind an `overflow: hidden` rule.
+
+**Heuristic** — inferences, marked `heuristic` in their evidence *and* hedged in
+their prose:
+
+- tap targets between the WCAG floor and the ~44px platform comfort guideline,
+  which break no standard;
+- text below 12px, since there is no standard minimum and captions and legal
+  copy are legitimately small;
+- anything about navigation, since identifying a "menu button" means
+  pattern-matching on labels and plenty of usable sites navigate differently;
+- "the layout may be broken", which only fires when several independent signals
+  agree, because it is the most inferential claim in the phase.
+
+A test enforces both halves: purely measured findings must carry only
+`measured` evidence, and every inferential finding must carry at least one
+`heuristic` item **and** hedge its wording. That test caught a finding whose
+evidence was correctly marked but whose explanation asserted "a workable number
+of visible links" as fact.
+
+### Automation does not determine mobile usability
+
+A standing `could_not_determine` finding says so on every analysis, clean pages
+included. A page can pass every check here and be miserable to use; it can fail
+several and be perfectly fine.
+
+The phase specification says not to pretend otherwise, so the report states the
+limit rather than leaving a reader to infer it from a row of green ticks.
+
+### The layout viewport is not the screen
+
+A page with **no viewport meta tag** is not laid out at the device width.
+Chromium falls back to a ~980px desktop width and scales the result down.
+
+This was discovered by an end-to-end test failing, not by reasoning, and it has
+a real consequence: overflow measured against that fallback **understates** the
+problem, because a 900px element fits inside 980px and reports no overflow
+while being far wider than the phone.
+
+`ViewportGeometry` therefore records both the layout width the page chose and
+the device width the browser was given, and the missing-viewport finding
+reports the gap between them. On such a page the missing tag is the finding
+that matters; the overflow number is close to meaningless and would have been
+quietly misleading.
+
+## Deliberately limited
+
+- **One viewport, one page state.** No orientation change, no tablet width, and
+  nothing behind an interaction.
+- **The menu is never opened.** Whether a collapsed navigation actually works is
+  reported as untested, not assumed.
+- **Selectors are approximate.** They are built to help a person find an element
+  in the DOM, not to be stable identifiers.
+- **A fifth page load per analysis.** Worth revisiting when the phases are
+  orchestrated in Phase 16; the signals could be collected during Phase 3's
+  existing mobile rendering instead.
+
+---
+
 # CHANGE LOG
 
 ## Initial version
@@ -2110,6 +2197,18 @@ TBT reported as the lab proxy (ADR-030).
 
 `launchSession` gained an `extraArgs` option so the DevTools port could be
 opened. The hardening flags are appended to, never replaced.
+
+## Phase 9 — Mobile Analyzer
+
+Added ADR-049.
+
+It records the browser probe plus pure analyzer split; exactly where the
+measured/heuristic line sits and the test that enforces both halves of it; the
+standing finding stating that automation cannot determine mobile usability; and
+a browser behaviour found by a failing end-to-end test — a page with no viewport
+meta tag is laid out at Chromium's ~980px fallback, not the device width, so
+overflow measured against it understates the problem. `ViewportGeometry` now
+records both widths.
 
 The Phase 3 constraint in `docs/IMPLEMENTATION.md` was amended: it previously
 read "the browser is network-isolated", which the implementation does not

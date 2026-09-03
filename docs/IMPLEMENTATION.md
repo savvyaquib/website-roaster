@@ -814,7 +814,8 @@ Phase 5 — ✅ Complete
 Phase 6 — ✅ Complete
 Phase 7 — ✅ Complete
 Phase 8 — ✅ Complete
-Phase 9 — ⏳ Not started
+Phase 9 — ✅ Complete
+Phase 10 — ⏳ Not started
 ...
 ```
 
@@ -1184,6 +1185,43 @@ Not delivered, deliberately:
 - lab data only; no field data or real-user monitoring
 - one run, unaveraged — Lighthouse metrics vary between runs
 - desktop only; no mobile performance run
+
+## Phase 9 — Complete
+
+Delivered in `lib/analysis/mobile/`:
+
+- `collectMobileSignals(url, options)` — renders at the Phase 3 mobile viewport
+  and measures element geometry in the page. Captures a screenshot. Always
+  closes the browser.
+- `analyzeMobile({ probe })` — **pure**. Signals in, `Finding[]` out.
+- `thresholds.ts` — separates standards-backed floors from comfort guidelines.
+
+Checked: horizontal overflow, viewport configuration (including zoom being
+disabled), clipping, tap target sizing, text size, mobile navigation, and
+overall layout integrity.
+
+Rules worth knowing (ADR-049):
+
+- **measured and heuristic are kept apart.** Overflow, viewport configuration,
+  tap targets below the WCAG 2.2 24px floor and clipping are `measured`.
+  Comfort-guideline sizing, small text, anything about navigation, and "the
+  layout may be broken" are `heuristic` — marked in their evidence and hedged
+  in their prose. A test enforces both halves.
+- a standing `could_not_determine` finding states that **automation cannot
+  determine mobile usability**, on every analysis including clean ones.
+- **the layout viewport is not the screen.** A page with no viewport meta tag is
+  laid out at Chromium's ~980px fallback, so overflow measured against it
+  understates the problem. Both widths are recorded and the gap is reported.
+
+Validation: 913 tests pass, 51 of them for this phase. The analyzer is covered
+with fixtures; a gated end-to-end test measures a deliberately broken page in
+real Chromium.
+
+Not delivered, deliberately:
+
+- no scoring — Phase 12
+- one viewport, one page state; no orientation change or tablet width
+- the navigation menu is never opened, only reported as untested
 
 ---
 
