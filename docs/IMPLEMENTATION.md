@@ -815,7 +815,8 @@ Phase 6 — ✅ Complete
 Phase 7 — ✅ Complete
 Phase 8 — ✅ Complete
 Phase 9 — ✅ Complete
-Phase 10 — ⏳ Not started
+Phase 10 — ✅ Complete
+Phase 11 — ⏳ Not started
 ...
 ```
 
@@ -1222,6 +1223,43 @@ Not delivered, deliberately:
 - no scoring — Phase 12
 - one viewport, one page state; no orientation change or tablet width
 - the navigation menu is never opened, only reported as untested
+
+## Phase 10 — Complete
+
+Delivered in `lib/analysis/content/`:
+
+- `extractContent(html, url)` — **pure**. Produces a `ContentInventory`.
+- `analyzeContent({ inventory })` — **pure**. Findings, no score, **no AI**.
+- `patterns.ts` — every pattern and threshold in one reviewable place.
+
+Extracted: hero headline and supporting copy, calls to action, feature/pricing/
+testimonial/FAQ/contact/about sections, contact information, footer, trust
+signals, and word counts.
+
+Rules worth knowing (ADR-050):
+
+- **every item records how it was found.** `<h1>`, `<footer>`, `mailto:`,
+  `<button>` and `<details>` are `structural` and become `measured` evidence.
+  Wording, position and pattern matches are `inferred` and become `heuristic`
+  evidence.
+- a threshold produces a heuristic finding even when the number is exact:
+  250 words is a measurement, "thin" is an opinion.
+- detection is **English-only pattern matching**, and the findings say so about
+  themselves — the "no sections recognised" finding states it says as much about
+  the analyzer as about the page.
+- navigation, header and footer text is excluded from the word count, since it
+  repeats on every page.
+- **no AI**, with a test asserting the analyzer imports none.
+
+Validation: 990 tests pass, 77 of them for this phase.
+
+Not delivered, deliberately:
+
+- no scoring — Phase 12
+- no AI interpretation — Phase 14
+- no judgement of copy quality; a pass means a thing was found, not that it is
+  any good
+- English only
 
 ---
 

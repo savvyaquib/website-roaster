@@ -2067,6 +2067,96 @@ quietly misleading.
 
 ---
 
+# ADR-050 — Content Extraction, And Which Parts Are Facts
+
+## Status
+
+Accepted
+
+## Decision
+
+### Extraction and analysis are separate, and both are pure
+
+`extractContent(html, url)` produces a `ContentInventory`. `analyzeContent`
+turns that into findings. Neither touches the network, a browser, a clock or a
+model.
+
+The extractor reuses Phase 4's parse5 adapter rather than introducing a second
+way of reading HTML. Phase 4 deliberately does not extract body text — recorded
+at the time as this phase's work — so the traversal lives here.
+
+### Every extracted item records how it was found
+
+This is the decision the phase turns on, and it is why `DetectionMethod` exists
+on almost everything in the model.
+
+**Structural** — markup that means what it says, and therefore a fact:
+
+- an `<h1>` is the headline;
+- a `<footer>` is the footer;
+- a `mailto:` or `tel:` link is a contact route;
+- an `<address>` is an address;
+- a `<button>` or `role="button"` is a control;
+- a `<details>` element is a disclosure, so a FAQ.
+
+**Inferred** — wording, position or pattern matching, and therefore a guess:
+
+- the paragraph after the headline is *usually* the supporting line;
+- a heading saying "Pricing" *probably* introduces pricing;
+- a link reading "Get started" is *likely* a call to action;
+- an email address found in page text *may* be a contact route;
+- "Trusted by 4,000 teams" *reads as* social proof.
+
+The analyzer turns the first into `measured` evidence and the second into
+`heuristic` evidence, so the distinction survives into the report and the UI can
+present them differently (ADR-009).
+
+Findings resting on a threshold are heuristic even when the number behind them
+is exact: **250 words is a measurement, "thin" is an opinion.**
+
+### Detection is English-only pattern matching, and says so
+
+Every pattern lives in `patterns.ts` so the guesswork is visible in one place
+and reviewable without reading the logic.
+
+The consequence is stated in the findings themselves rather than buried: when
+no sections are recognised, the finding says the result "says as much about the
+analyzer as about the page". When no trust signals are found, the finding calls
+its own evidence weak. A page in another language will look emptier to this
+analyzer than it is, and pretending otherwise would be the failure mode worth
+avoiding.
+
+Pattern **order matters** for calls to action: the first match is the name
+recorded, so specific patterns precede general ones. "Book a demo" is more
+usefully reported as a demo than as a booking, and getting that wrong was caught
+by a test.
+
+### Navigation, header and footer are excluded from the word count
+
+They repeat on every page, and counting them would make a page that says almost
+nothing look substantial.
+
+### No AI
+
+Phase 14 interprets evidence this phase has already collected (ADR-003).
+Reaching for a model here would make the content section non-deterministic and
+unexplainable, and there is a test asserting the analyzer imports nothing of the
+kind.
+
+## Deliberately limited
+
+- **English only.** Every pattern is English wording.
+- **Sections are classified from headings.** A page whose sections are
+  distinguished only visually will read as unstructured.
+- **The phone pattern is the loosest thing here**, guarded only by a digit-count
+  floor. A long reference number can still look like a phone number, which is
+  why anything it finds is `inferred`.
+- **Quality is not assessed.** Whether the copy is any good, whether the
+  headline is compelling, whether a testimonial is convincing — none of that is
+  attempted, and none of it should be inferred from a pass.
+
+---
+
 # CHANGE LOG
 
 ## Initial version
@@ -2209,6 +2299,18 @@ a browser behaviour found by a failing end-to-end test — a page with no viewpo
 meta tag is laid out at Chromium's ~980px fallback, not the device width, so
 overflow measured against it understates the problem. `ViewportGeometry` now
 records both widths.
+
+## Phase 10 — Content Analyzer
+
+Added ADR-050.
+
+It records that every extracted item carries a `DetectionMethod`, so structural
+facts (`<h1>`, `<footer>`, `mailto:`, `<button>`) stay distinguishable from
+inferences (the paragraph after the headline, a heading saying "Pricing", a
+link reading "Get started"); that thresholds produce heuristic findings even
+when the number is exact; that detection is English-only pattern matching and
+the findings say so about themselves; and that no AI is used, with a test
+asserting it.
 
 The Phase 3 constraint in `docs/IMPLEMENTATION.md` was amended: it previously
 read "the browser is network-isolated", which the implementation does not
