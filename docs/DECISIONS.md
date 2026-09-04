@@ -2157,6 +2157,105 @@ kind.
 
 ---
 
+# ADR-051 — UX Signals Are Measured; Every UX Finding Is A Heuristic
+
+## Status
+
+Accepted
+
+## Decision
+
+### Counting and judging are separate modules
+
+`collectUxSignals(html, url)` produces `UxSignals` — counts, depths and ratios,
+all objectively countable from the document. `analyzeUx` turns those into
+findings.
+
+Both are pure. Neither touches the network, a browser, a clock or a model. The
+collector reuses Phase 4's parse5 adapter rather than adding a third way of
+reading HTML.
+
+### Every finding pairs a measurement with the inference drawn from it
+
+This is the phase's contract, and it is enforced by test:
+
+- every finding carries at least one **`measured`** evidence item naming the
+  signal and its value — and that item must contain a digit;
+- every finding carries at least one **`heuristic`** evidence item stating the
+  inference.
+
+That pairing is what makes "the navigation looks complex" auditable. A reader
+sees it came from `maxLinksInOneRegion = 14` against a threshold of 12, can
+decide the threshold is wrong for a documentation site, and still use the count.
+
+A heuristic that does not say what produced it cannot be checked, argued with,
+or trusted — and this is the category where that failure would be easiest to
+commit.
+
+### Unlike Phase 9, nothing here is standards-backed
+
+Phase 9 could point at WCAG 2.2 for a 24px tap target: a real floor, so failing
+it is a fact. **Nothing in this phase has that.** Twelve navigation links,
+eight competing actions, twenty levels of DOM nesting — all rules of thumb from
+common practice, and a well-made page can sit the wrong side of any of them.
+
+Every threshold lives in `thresholds.ts` with that stated plainly, and the
+findings hedge in their own words: the busy-navigation finding says a
+documentation site legitimately has more; the many-actions finding allows a
+pricing page a button per plan; the repetition finding says a catalogue is
+supposed to look like that.
+
+### Severity is capped below `serious`
+
+No UX finding is `critical` or `serious`, and there is a test asserting it.
+
+An inference from counting elements must not weigh the same as an unencrypted
+connection or a cookie missing `Secure`. Capping it here stops Phase 12 from
+weighting guesswork like evidence — which matters especially given ADR-037's
+open question about UX carrying 20% of the overall score.
+
+### A standing finding states what counting cannot reach
+
+`ux.assessment.limits` is emitted on every analysis, including a page that trips
+nothing. It names what was not observed: visual hierarchy, clarity of language,
+whether the layout guides the eye, whether the page achieves what it exists for.
+
+A UX section that reads as a verdict would be the most misleading output this
+product could produce, because UX is exactly the category a reader will assume
+was judged holistically.
+
+### Absence is reported with a count
+
+"0 navigation regions were found" rather than "no navigation was found". A count
+of zero is still the observable signal, and stating it keeps every finding
+consistent about naming what was measured. A test requires a digit in the
+measured evidence, which is what surfaced this.
+
+## Overlaps with other phases, and why they stand
+
+- **Heading structure** is also checked in Phase 5 (SEO) and this phase. They
+  ask different questions of the same markup: Phase 5 asks whether search
+  engines can read the outline, Phase 11 asks whether a person can skim it.
+- **Actions** overlap with Phase 10's call-to-action extraction. Phase 10 asks
+  *what* the actions say; this phase asks *how many* compete. Neither answer
+  substitutes for the other.
+
+Both were considered for consolidation and left separate: merging them would
+couple the phases and make each answer worse.
+
+## Deliberately limited
+
+- **Repetition is matched by tag plus first class name.** A component using
+  varied classes will not register; one reusing a class for unrelated things
+  will over-register.
+- **Emphasis detection is class-based** (`primary`, `main`, `hero`), which many
+  design systems do not use. A page emphasising its action purely through CSS
+  will read as having none.
+- **Nothing is rendered.** Visual weight, colour, contrast, spacing and position
+  — the things UX actually turns on — are entirely outside what this phase sees.
+
+---
+
 # CHANGE LOG
 
 ## Initial version
@@ -2311,6 +2410,22 @@ link reading "Get started"); that thresholds produce heuristic findings even
 when the number is exact; that detection is English-only pattern matching and
 the findings say so about themselves; and that no AI is used, with a test
 asserting it.
+
+## Phase 11 — UX Heuristics
+
+Added ADR-051.
+
+It records the split between a signal collector (all measured) and an analyzer
+(all heuristic); the contract that **every** finding pairs a measured evidence
+item naming the signal — containing a digit — with a heuristic item stating the
+inference, enforced by test; that unlike Phase 9 nothing here is
+standards-backed, so every threshold is a rule of thumb; that severity is capped
+below `serious` so an inference cannot weigh like a measurement; and the
+standing finding naming what counting cannot reach.
+
+It also records why the heading and action overlaps with Phases 5 and 10 were
+left in place rather than consolidated: the phases ask different questions of
+the same markup.
 
 The Phase 3 constraint in `docs/IMPLEMENTATION.md` was amended: it previously
 read "the browser is network-isolated", which the implementation does not

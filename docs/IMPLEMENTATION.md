@@ -816,7 +816,8 @@ Phase 7 — ✅ Complete
 Phase 8 — ✅ Complete
 Phase 9 — ✅ Complete
 Phase 10 — ✅ Complete
-Phase 11 — ⏳ Not started
+Phase 11 — ✅ Complete
+Phase 12 — ⏳ Not started
 ...
 ```
 
@@ -1260,6 +1261,45 @@ Not delivered, deliberately:
 - no judgement of copy quality; a pass means a thing was found, not that it is
   any good
 - English only
+
+## Phase 11 — Complete
+
+Delivered in `lib/analysis/ux/`:
+
+- `collectUxSignals(html, url)` — **pure**. Counts only; nothing judged.
+- `analyzeUx({ signals })` — **pure**. Findings, no score, **no AI**.
+- `thresholds.ts` — every rule of thumb in one place, labelled as such.
+
+Signals collected: navigation complexity (regions, links, nesting, duplicate
+destinations), primary actions, interactive density per 100 words, heading
+outline and skipped levels, content hierarchy (landmarks, DOM depth, ratios),
+form complexity, and repeated components.
+
+Rules worth knowing (ADR-051):
+
+- **every finding pairs a measurement with the inference drawn from it.** A
+  `measured` evidence item names the signal and must contain a digit; a
+  `heuristic` item states the inference. Both are enforced by test, which is
+  what makes "navigation looks complex" auditable rather than an opinion.
+- **nothing here is standards-backed.** Unlike Phase 9's WCAG tap-target floor,
+  every threshold is a rule of thumb, and the findings say so — a documentation
+  site legitimately has a large menu, a pricing page a button per plan.
+- **severity is capped below `serious`**, with a test, so Phase 12 cannot weight
+  guesswork like evidence. This matters given ADR-037's open question about UX
+  carrying 20% of the score.
+- a standing finding names what counting cannot reach: visual hierarchy, clarity
+  of language, whether the layout guides the eye.
+- absence is reported with a count — "0 navigation regions were found" — since a
+  zero is still the observable signal.
+
+Validation: 1054 tests pass, 64 of them for this phase.
+
+Not delivered, deliberately:
+
+- no scoring — Phase 12
+- no AI — Phase 14
+- nothing rendered: visual weight, colour, spacing and position are outside
+  what this phase can see
 
 ---
 
