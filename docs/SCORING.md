@@ -71,14 +71,24 @@ Time is the established lab proxy. The report must not display an INP number.
 
 # Sub-weights for the remaining categories
 
-**Not yet defined.** SEO, Accessibility, Mobile, Security, Content and UX have
-no sub-weights.
+**Not needed, and not defined.** SEO, Accessibility, Mobile, Security, Content
+and UX have no sub-weight tables, and Phase 12 was implemented without them.
 
-They are defined as each analyzer lands, because the weighting of a check can
-only be decided once it is known what that check can actually observe. Each
-phase from 5 to 11 adds its category's table here.
+An earlier draft of this document said "Phase 12 cannot be implemented until
+every category in the overall table has one." That was wrong, and contradicted
+by this document's own deduction table (ADR-052). Those six categories are
+scored by deduction, and **a finding's `severity` already carries its per-check
+weight**: the analyzer that produced the finding decided how much the check
+matters, and the deduction table below converts that judgement into points. A
+separate per-check weight table would be a second, competing opinion about the
+same thing.
 
-Phase 12 cannot be implemented until every category in the overall table has one.
+Performance is the exception, and the reason the distinction exists. It is
+scored from raw metrics rather than findings, so nothing in a metric says how
+much it matters — hence the sub-weight table above.
+
+If a category ever needs finer weighting than five severities can express, a
+sub-weight table for it belongs here, and the scoring version increments with it.
 
 ---
 
@@ -127,8 +137,20 @@ TBT           200ms      600ms
 CLS           0.1        0.25
 ```
 
-Thresholds for page weight, image optimization and JS cost are defined in
-Phase 8, when it is known what the analyzer can measure.
+**Page weight, image optimization, JS cost and "Other" have no thresholds.**
+This paragraph used to say they would be defined in Phase 8. Phase 8 landed: it
+collects the raw measurements (`totalByteWeight`, `imagePotentialSavingsBytes`,
+`javaScriptBootupMs`, `unusedJavaScriptBytes` and the rest) but defines no
+good/poor thresholds for them, and "Other" was never given a definition at all.
+
+Phase 12 does not invent thresholds to fill the gap (CLAUDE.md). Those four
+components are marked unscorable, excluded from the Performance score, and their
+weight is redistributed across LCP, TBT and CLS — the same redistribution rule
+this document already applies to unassessable categories, one level down
+(ADR-052). The report names each excluded component and says why.
+
+Defining any of these four is a scoring change: add the curve, and increment
+the scoring version.
 
 Raw metric values are always retained alongside the normalised score and are
 never overwritten by it (ADR-012).

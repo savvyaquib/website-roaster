@@ -817,7 +817,7 @@ Phase 8 — ✅ Complete
 Phase 9 — ✅ Complete
 Phase 10 — ✅ Complete
 Phase 11 — ✅ Complete
-Phase 12 — ⏳ Not started
+Phase 12 — ✅ Complete
 ...
 ```
 
@@ -1300,6 +1300,71 @@ Not delivered, deliberately:
 - no AI — Phase 14
 - nothing rendered: visual weight, colour, spacing and position are outside
   what this phase can see
+
+---
+
+## Phase 12 — Complete
+
+Delivered in `lib/scoring/`:
+
+- `weights.ts` — the **only** mirror of `docs/SCORING.md`: category weights, the
+  deduction table, the metric curves, the Performance sub-weights.
+- `score-category.ts` — findings to a score by deduction. Pure.
+- `score-performance.ts` — raw metrics to a score by curve. Pure.
+- `score-analysis.ts` — `scoreAnalysis(input)`, the entry point. Pure.
+- `grade.ts`, `version.ts`, `types.ts`, `index.ts`.
+
+The four layers stay apart: analyzers produce evidence in `lib/analysis`,
+weights live in `weights.ts`, calculations in the `score-*` modules, and nothing
+scoring-related is in the UI.
+
+Rules worth knowing (ADR-052):
+
+- **every number reconstructs from the report.** Each category records the
+  deductions (finding id, severity, status, points) or metric contributions (raw
+  value, unit, normalised score, effective weight) behind it; the overall score
+  records each category's weight and contribution. A test recomputes all of it,
+  so an untraceable score fails the build.
+- **the overall score is computed from the rounded figures on screen**, not from
+  hidden precision, so a reader adding up what they see gets what they were
+  shown.
+- **not assessed is not zero, and has no grade.** A category with no findings,
+  or whose findings are all `could_not_determine`, is excluded and its weight
+  redistributed (ADR-036). Grading it F would publish a verdict nobody reached.
+  With nothing assessable at all, the overall score is `null` and says so.
+- **severity is the per-check weight**, which is why six categories need no
+  sub-weight table. `docs/SCORING.md` claimed otherwise and was corrected.
+- **four Performance components have no thresholds** — page weight, image
+  optimization, JS cost, "Other". They are excluded with their weight
+  redistributed across LCP, TBT and CLS rather than given invented curves, and
+  the report names each one and why.
+- **no AI, asserted by test** (ADR-002), along with no clock, no I/O and no
+  randomness. Same evidence in, identical report out.
+- `SCORING_VERSION` is 1, stamped on every report; a test fails if the constant
+  and `docs/SCORING.md` disagree.
+
+Deviation from this document's Phase 12 sketch, deliberately: the sketch showed
+`CategoryScore` as `{ score: number; grade: string; findings: Finding[] }`.
+The delivered type uses `score: number | null` and `grade: Grade | null`,
+because a category that could not be assessed must not be scored zero or graded
+F (ADR-021, ADR-036) — the sketch's types cannot express that. It carries
+`deductions` and `metrics` rather than `findings`, so the score's arithmetic
+travels with it; the findings themselves are not copied and so cannot drift.
+
+Validation: typecheck, lint, format check, 1189 tests (135 for this phase) and
+`next build` all pass.
+
+Not delivered, deliberately:
+
+- no ranking of problems — Phase 13
+- no AI — Phase 14
+- no UI — Phase 17
+- **ADR-037 is still open.** Security at 5% and UX at 20% are implemented as
+  documented and pinned by test. They are now load-bearing and need a product
+  decision.
+- page weight, image optimization and JS cost are measured but unscored until
+  thresholds are defined
+
 
 ---
 

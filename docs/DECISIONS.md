@@ -2256,6 +2256,145 @@ couple the phases and make each answer worse.
 
 ---
 
+# ADR-052 — The Scoring Engine, And The Three Gaps It Had To Cross
+
+## Status
+
+Accepted
+
+## Context
+
+`docs/SCORING.md` defined the model but left three things unresolved, each of
+which blocks Phase 12 in a different way. This ADR records what was decided
+about each, because all three are judgement calls that a future reader will
+otherwise have to reconstruct from the arithmetic.
+
+## Decision
+
+### 1. Severity is the per-check weight — no sub-weight tables are needed
+
+`docs/SCORING.md` said "Phase 12 cannot be implemented until every category in
+the overall table has one [a sub-weight table]." That line was **wrong**, and
+contradicted by the same document's deduction table.
+
+Six of the seven categories are scored by deduction from a starting 100. A
+finding's `severity` is already a per-check weight: the analyzer that produced
+it decided how much that check matters, and the deduction table converts the
+judgement into points. A `critical` SEO failure costs 25; a `minor` one costs 3.
+Adding a separate per-check weight table would be a second, competing statement
+about the same thing, and the two would drift.
+
+Performance is the exception, and the exception explains the rule: it is scored
+from raw metrics, and a metric does not carry an opinion about its own
+importance. That is why it — and only it — has a sub-weight table.
+
+The blocker line in `docs/SCORING.md` was corrected rather than satisfied.
+
+### 2. ADR-037's weights are implemented exactly as documented
+
+ADR-037 records that Security at 5% and UX at 20% look unintentional: a site
+served over plain HTTP with no security headers at all can lose at most five
+points overall, while a fifth of the score rests on the least objective evidence
+the system collects.
+
+That ADR is still open, and Phase 12 does not close it. The weights are
+implemented **as written**, because inventing different ones is forbidden
+(CLAUDE.md) and a weight is a product judgement, not an engineering one.
+
+Two tests pin the values so the question stays visible instead of quietly
+becoming permanent, and `lib/scoring/score-analysis.test.ts` demonstrates the
+asymmetry rather than describing it: a category scoring zero on security costs
+five overall points; the same failure in UX costs twenty.
+
+Changing the product's mind is a change to `CATEGORY_WEIGHTS`, this document,
+`docs/SCORING.md` and the scoring version — nothing else.
+
+### 3. Undefined thresholds redistribute one level down
+
+Four of the seven Performance components — page weight, image optimization, JS
+cost and "Other" — carry a declared weight but have no defined curve.
+`docs/SCORING.md` deferred three of them to Phase 8, and Phase 8 collected their
+raw measurements without defining thresholds. "Other" was never defined at all.
+
+Three options were considered:
+
+- **Invent thresholds.** Rejected: forbidden by CLAUDE.md, and a fabricated
+  threshold produces a confident number nobody can defend.
+- **Refuse to score Performance at all.** Rejected: 60% of the sub-weight table
+  *is* defined, and discarding good measurements because others are missing
+  serves nobody.
+- **Exclude them and redistribute their weight proportionally.** Chosen. It is
+  the rule `docs/SCORING.md` already applies to unassessable categories
+  (ADR-036), applied one level down.
+
+The gap is data, not logic: each component is declared with `curve: null` and an
+`undefinedReason`, and the report names every excluded component and why. LCP,
+TBT and CLS carry Performance at 41.67 / 33.33 / 25 until thresholds exist.
+
+## The rest of the engine
+
+### Every number reconstructs from the report
+
+Each category records the deductions (finding id, severity, status, points) or
+the metric contributions (raw value, unit, normalised score, effective weight)
+that produced it. The overall score records each category's declared weight,
+effective weight, score and contribution.
+
+A test recomputes every category score from its own recorded parts and the
+overall score from its weighting, so a score that could not be traced back to
+evidence fails the build. This is what ADR-002's explainability requirement
+means in practice.
+
+### The overall score is computed from the numbers on screen
+
+Contributions come from the **rounded** category scores and the **rounded**
+effective weights the report displays, not from hidden precision. A reader who
+adds up what they can see gets the number they were shown. The cost is a few
+hundredths of drift in the weight total, which is the right trade.
+
+### Not assessed is not zero, and has no grade
+
+A category nobody could assess has `score: null`, `status: "not_assessed"`, a
+stated reason, and **no grade** — grading it F would publish a verdict nobody
+reached (ADR-021). Its weight is redistributed. A category whose every finding
+is `could_not_determine` is treated the same way: the analyzer ran and
+established nothing.
+
+When no category at all could be assessed, the overall score is `null` and says
+so in words, rather than being zero.
+
+### A misconfigured curve refuses to answer
+
+`normaliseMetric` returns `null` for a curve whose `poor` is not worse than its
+`good`. An earlier version checked the value before the curve and returned 100 —
+a perfect score derived from nonsense. Failing to score is the honest output.
+
+### No AI, asserted by test
+
+ADR-002 forbids a model influencing a number. `lib/scoring` is pure arithmetic:
+no I/O, no clock, no randomness, no model. Tests assert the source contains
+nothing model-shaped and no clock or filesystem access, and that the same input
+always yields an identical report.
+
+### Scoring version 1
+
+`SCORING_VERSION` lives in `lib/scoring/version.ts` and is stamped on every
+report (ADR-013). A test parses `docs/SCORING.md` and fails if the version it
+declares and the constant disagree. Any change to a weight, a deduction, a
+threshold or the arithmetic increments it.
+
+## Consequences
+
+- Scoring weights, scoring calculations, analyzer logic and UI stay in four
+  separate places. `weights.ts` is the only file mirroring `docs/SCORING.md`,
+  and a test holds the two together.
+- Performance carries a visible caveat until four thresholds are defined.
+- ADR-037 remains open, and the weights it questions are now load-bearing.
+- The engine is pure, so a report can be recomputed from stored evidence
+  without re-running an analysis.
+
+---
+
 # CHANGE LOG
 
 ## Initial version
@@ -2435,6 +2574,37 @@ Also fixed a Phase 1 defect found while implementing this phase:
 `classifyIpLiteral` recognised IPv6 only in its bracketed form, so a bare
 address from a DNS resolver was classified as "not an IP address". Left
 unfixed it would have refused every IPv6-only site.
+
+## Phase 12 — Deterministic Scoring Engine
+
+Added ADR-052.
+
+It records the three gaps `docs/SCORING.md` left and how each was crossed: that
+a finding's severity *is* its per-check weight, so the document's claim that
+Phase 12 needed sub-weight tables for six categories was wrong; that ADR-037's
+questioned weights are implemented exactly as documented and pinned by test
+rather than quietly adjusted; and that the four Performance components with a
+declared weight but no defined curve are excluded with their weight
+redistributed, applying ADR-036's rule one level down instead of inventing
+thresholds.
+
+It also records the engine's contract: every number reconstructs from the
+report's own recorded parts (enforced by test), the overall score is computed
+from the rounded figures the report displays, an unassessed category has a null
+score and no grade rather than a zero and an F, a misconfigured curve refuses to
+score, and no AI touches any of it.
+
+Two corrections were made to `docs/SCORING.md`:
+
+- the line "Phase 12 cannot be implemented until every category in the overall
+  table has one" was replaced with why sub-weight tables are not needed;
+- "Thresholds for page weight, image optimization and JS cost are defined in
+  Phase 8" was replaced with what Phase 8 actually delivered — raw measurements
+  and no thresholds — and what Phase 12 does about it.
+
+Also fixed while implementing this phase: `normaliseMetric` checked the value
+before validating the curve, so an inverted or degenerate curve returned 100
+instead of refusing to score.
 
 New decisions are appended immediately above this section, using the form:
 
