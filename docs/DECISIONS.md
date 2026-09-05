@@ -2395,6 +2395,158 @@ threshold or the arithmetic increments it.
 
 ---
 
+# ADR-053 — Recommendations Are A Ranked View, And What Ranks Them
+
+## Status
+
+Accepted
+
+## Context
+
+Phase 13 turns findings into a prioritized list. Three things had to be decided
+before it could be written: what a recommendation *is* relative to a finding,
+what "impact" means when the scoring model prices two categories very
+differently, and how to order the result when the specification offers two
+orderings that do not agree.
+
+## Decision
+
+### A recommendation holds no copy of its finding
+
+ADR-029 already said a recommendation is a derived view rather than a competing
+record. This phase takes that literally: `Recommendation` carries only what it
+adds — `rank`, `title`, `impact`, `tier` — plus the `Finding` it came from.
+
+Severity, status, category, evidence, explanation and the recommended action are
+read through `recommendation.finding`, not copied onto the recommendation. A
+test pins the exact key set so a convenience copy cannot be added later without
+someone deciding to.
+
+The cost is a slightly longer path at every call site. The benefit is that a
+recommendation can never disagree with its finding, because there is exactly one
+copy of each of those values in the system.
+
+### Impact is two numbers, not one
+
+`impact.level` is **how bad it is** — high, medium, low or none — banded from
+the severity and status the analyzer assigned.
+
+`impact.points` is **how far the overall score would move** if it were fixed —
+the deduction table multiplied by the category weight.
+
+They are kept apart because they disagree, and the disagreement is real. A
+critical security failure is `high` but recovers 1.25 overall points, because
+`docs/SCORING.md` weights Security at 5% (ADR-037, still open). Collapsing them
+into one number would either bury a serious problem or overstate a trivial one,
+and would hide the weighting question rather than expose it.
+
+The band boundaries are values that already appear in the deduction table — 15,
+4 and 1 — so no new threshold is introduced by this layer.
+
+### Performance impact is null, not zero
+
+`docs/SCORING.md` rule 4 says metric-based findings are scored by the curves and
+the Performance sub-weights, not by the deduction table. So a Performance
+finding's severity says how bad it is, but what a fix returns depends on how far
+the measurement moves, which a finding does not record.
+
+Rather than pricing it with a table that does not apply, `points` is `null` and
+the impact explanation says why. In the ranking, a null is **placed** rather than
+scored: it sorts after a priced finding of equal severity and ahead of every
+milder one. Treating it as zero would rank a real performance problem below a
+trivial nit; treating it as high would invent a number.
+
+### The sort, and where it departs from the document
+
+Keys, applied until one separates two entries:
+
+1. impact level
+2. severity
+3. recoverable points, descending
+4. status
+5. priority tier
+6. finding id
+
+The list is total — ids are unique within a run — so the ordering is fully
+deterministic and never falls back to input order. Tests assert the comparator
+is antisymmetric and that forward, reversed and shuffled inputs rank identically.
+
+`docs/IMPLEMENTATION.md` lists four priority tiers — severe technical, major
+usability, conversion and discoverability, minor polish — and reads as though
+they order the list. **They are applied as key 5, not key 1.**
+
+The reason is that the phase's stated goal is "rank problems according to
+impact", and a ranking driven primarily by category would routinely contradict
+the score shown beside it. A report that puts a security warning above an
+accessibility failure while also showing that fixing the accessibility failure
+recovers three times as many points is telling the reader two different things
+about what matters.
+
+The consequence is visible and tested: an accessibility problem (tier 2, 15%)
+outranks an equally severe security problem (tier 1, 5%), because points are
+compared before tiers. That is `docs/SCORING.md`'s weighting doing exactly what
+it says. If it looks wrong, the weights are what should change — which is
+ADR-037's open question, now with a second place it shows up.
+
+The fourth tier overrides the category mapping: a `minor` finding is polish
+whatever category it came from, because that tier is the only one the document
+names by size rather than by kind.
+
+### Titles are derived, and say so
+
+`Finding` has no title field. Adding one would mean changing the canonical model
+and all eleven analyzers, which ADR-029 rules out and this phase has no mandate
+to do. Presentation is explicitly this layer's job, so the title is derived from
+the **first evidence summary** — a short authored statement of what was actually
+observed, which is what a title should say.
+
+Checked against real analyzer output, this produces titles like "No mailto: or
+tel: links, and no `<address>` element, were found" and "The page has 9 word(s)
+of body text across 1 paragraph(s)". It needs no lookup table, so a finding from
+a future analyzer gets a sensible title with nothing to maintain and nothing to
+fall out of date.
+
+The explanation's first sentence and then the finding's identifier are
+fallbacks, so a title is never empty. Every recommendation records which of the
+three it used in `titleSource`, so a derived label is never presented as an
+authored one.
+
+### Undetermined checks are recommended as reviews
+
+A `could_not_determine` finding becomes a recommendation of kind `review` with
+no recoverable points, ranked last. Dropping them would hide exactly what
+ADR-021 exists to surface — that something could not be established. A `pass`
+becomes nothing; several analyzers attach advice to a passing check, which
+belongs in a report but is not a problem to prioritize, and the count survives
+in the summary.
+
+### No second copy of the scoring model
+
+The deduction table and the category weights are imported from `lib/scoring`.
+This layer only multiplies. A test asserts `impact.ts` imports from
+`@/lib/scoring` and contains no literal weight table, because a second scoring
+model that could disagree with the first is the failure ADR-052 was written to
+prevent.
+
+Where a score report is supplied, points are priced against the **effective**
+weight — what the category actually carried after redistribution (ADR-036) —
+rather than the declared one. The two differ whenever anything was unassessable,
+and every impact records which was used.
+
+## Consequences
+
+- A recommendation is worthless without its finding, by design. Anything storing
+  recommendations stores findings too (Phase 16).
+- The ranked order depends on the category weights, so changing them changes the
+  report's priorities as well as its score. That is correct, and it raises the
+  stakes on ADR-037.
+- Titles will change if an analyzer rewords its first evidence summary. They are
+  presentation, not identifiers; `findingId` is the stable key.
+- No AI, asserted by test. Phase 14 interprets this list rather than producing
+  it.
+
+---
+
 # CHANGE LOG
 
 ## Initial version
@@ -2605,6 +2757,29 @@ Two corrections were made to `docs/SCORING.md`:
 Also fixed while implementing this phase: `normaliseMetric` checked the value
 before validating the curve, so an inverted or degenerate curve returned 100
 instead of refusing to score.
+
+## Phase 13 — Recommendation Engine
+
+Added ADR-053.
+
+It records that a recommendation holds no copy of its finding — only rank,
+title, impact and tier, with severity, evidence, explanation and the recommended
+action read through the finding, pinned by a test on the exact key set; that
+impact is deliberately two numbers, a judgement band for how bad it is and a
+points figure for how far the score moves, kept apart because the category
+weights make them disagree; that Performance impact is null rather than zero,
+since the deduction table does not price a curve-scored category, and a null is
+placed in the ranking rather than scored; and that titles are derived from the
+first evidence summary because the finding model has no title field, with the
+source recorded so a derived label is never shown as an authored one.
+
+It also records where the ranking departs from `docs/IMPLEMENTATION.md`. The
+document's four priority tiers are applied as the fifth sort key rather than the
+first, because the phase's goal is ranking by impact and a category-led ordering
+would contradict the score shown beside it. The visible consequence — an
+accessibility problem outranking an equally severe security one, because
+`docs/SCORING.md` weights them 15% against 5% — is tested rather than hidden,
+and is a second place ADR-037's open question now shows up.
 
 New decisions are appended immediately above this section, using the form:
 

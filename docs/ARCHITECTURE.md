@@ -119,6 +119,7 @@ Directories that appear in later phases:
 ```text
 lib/analysis/           Analyzer modules (Phases 1-11)
 lib/scoring/            Scoring engine and weights (Phase 12)
+lib/recommendations/    Ranked, actionable findings (Phase 13)
 lib/ai/                 Provider abstraction and prompts (Phase 14)
 ```
 
@@ -153,6 +154,7 @@ See ADR-027.
 | `lib/types` | The shared vocabulary | Contain logic |
 | `lib/analysis/*` | Collecting evidence | Compute scores |
 | `lib/scoring` | Turning findings into numbers | Re-read the page or call the AI |
+| `lib/recommendations` | Ranking findings by impact | Hold a second copy of the scoring model |
 | `lib/ai` | Interpretation of supplied evidence | Produce measurements or scores |
 | `app/` | HTTP surface and UI | Contain scoring or analysis logic |
 

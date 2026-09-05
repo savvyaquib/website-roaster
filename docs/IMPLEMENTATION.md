@@ -818,6 +818,7 @@ Phase 9 — ✅ Complete
 Phase 10 — ✅ Complete
 Phase 11 — ✅ Complete
 Phase 12 — ✅ Complete
+Phase 13 — ✅ Complete
 ...
 ```
 
@@ -1364,6 +1365,65 @@ Not delivered, deliberately:
   decision.
 - page weight, image optimization and JS cost are measured but unscored until
   thresholds are defined
+
+
+---
+
+## Phase 13 — Complete
+
+Delivered in `lib/recommendations/`:
+
+- `build-recommendations.ts` — `buildRecommendations({ findings, score? })`,
+  the entry point. Pure.
+- `rank.ts` — the comparator and the ranking. Pure.
+- `impact.ts` — what a fix is worth, priced against `lib/scoring`. Pure.
+- `title.ts` — deterministic title derivation.
+- `tiers.ts` — the document's four priority tiers and the impact bands.
+- `types.ts`, `index.ts`.
+
+Rules worth knowing (ADR-053):
+
+- **a recommendation holds no copy of its finding.** It carries `rank`, `title`,
+  `impact` and `tier`; severity, evidence, explanation and the recommended
+  action are read through `recommendation.finding`. A test pins the key set, so
+  the two can never disagree.
+- **impact is two numbers.** `level` is how bad it is, banded from severity and
+  status; `points` is how far the overall score would move. They disagree — a
+  critical security failure is high impact worth 1.25 points — and keeping them
+  apart is what stops the report from hiding ADR-037's weighting question.
+- **Performance impact is null, not zero**, because `docs/SCORING.md` scores that
+  category from metric curves rather than from the deduction table. In the
+  ranking a null is placed, not scored: after a priced finding of equal
+  severity, ahead of every milder one.
+- **the sort is impact level, severity, points, status, tier, finding id.** Total
+  and deterministic; forward, reversed and shuffled inputs rank identically.
+- **the document's four tiers are key 5, not key 1.** Ranking primarily by
+  category would contradict the score shown beside it. The consequence — an
+  accessibility problem outranking an equally severe security one at 15% against
+  5% — is tested rather than hidden.
+- **titles are derived from the first evidence summary**, since `Finding` has no
+  title field and ADR-029 rules out adding one. `titleSource` records which of
+  the three sources was used, so a derived label is never shown as authored.
+- **undetermined checks are recommended as reviews**, ranked last with no points.
+  Dropping them would hide what ADR-021 exists to surface. Passes are not
+  recommendations; the count survives in the summary.
+- **no AI, asserted by test.** Phase 14 interprets this list rather than
+  producing it.
+
+Checked against real analyzer output, not only fixtures: the suite runs Phase 10
+and Phase 11 over an HTML page and asserts every resulting recommendation gets a
+usable title from its own evidence.
+
+Validation: typecheck, lint, format check, 1326 tests (137 for this phase) and
+`next build` all pass.
+
+Not delivered, deliberately:
+
+- no AI and no roast — Phase 14 and Phase 15
+- no UI — Phase 17
+- no persistence — Phase 16
+- **ADR-037 is still open**, and now affects the order of the report as well as
+  the score
 
 
 ---
