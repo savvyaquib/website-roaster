@@ -819,7 +819,8 @@ Phase 10 — ✅ Complete
 Phase 11 — ✅ Complete
 Phase 12 — ✅ Complete
 Phase 13 — ✅ Complete
-Phase 14 — 🟡 Foundation only (provider abstraction)
+Phase 14 — ✅ Complete
+Phase 15 — ✅ Complete
 ...
 ```
 
@@ -1483,6 +1484,122 @@ Not delivered, deliberately:
 - no roast — Phase 15
 - no retry loop; `retryable` is exposed for a later phase to act on
 - no caching of AI responses
+
+
+---
+
+## Phase 14 — Complete
+
+Delivered in `lib/ai/interpretation/`:
+
+- `evidence.ts` — assembles what the model may see. Pure, bounded.
+- `prompt.ts` — the instruction, with the prohibitions stated explicitly.
+- `schema.ts` — the answer's shape, validated locally whatever the provider did.
+- `verify.ts` — whether the answer's **claims** stand up. Pure.
+- `interpret.ts` — `interpretAnalysis(availability, request)`. Never throws.
+
+The model receives page content, technical findings, score information, UX
+heuristics (findings like any other) and screenshots. It returns an executive
+summary, strengths, and ranked problems each carrying an explanation and a
+recommendation.
+
+Rules worth knowing (ADR-055):
+
+- **the model supplies prose; the application supplies facts.** An answer
+  carries only `{ findingId, whyItMatters, recommendation }` — no severity, no
+  category, no metric, no score. Every fact in the result is read back through
+  `problem.finding`. This is what makes invention structurally hard rather than
+  merely forbidden.
+- **the prompt states all five prohibitions** — invented metrics, invented
+  technical findings, unsupported security claims, unsupported SEO claims,
+  contradicting the evidence — and a test asserts each is present. But the
+  prompt is a request; `verify.ts` is the enforcement.
+- **verification checks claims, not just shape.** Every reference resolves;
+  no reference contradicts its finding's status; every measurement stated
+  appears in the evidence; no security assurance or ranking promise.
+- **an answer with any violation is discarded whole.** Not repaired, not
+  partially used. The deterministic report always stands, so refusing costs a
+  section rather than the report.
+- **evidence is assembled by construction and bounded**, and reports what it
+  dropped. Problems are ranked before truncation, so a cap drops the least
+  important.
+- **failure is ordinary.** `interpretAnalysis` never throws — including when a
+  provider breaks its contract and throws — and every outcome carries a message
+  fit to show a person.
+
+Validation: typecheck, lint, format check, 1676 tests (172 for this phase) and
+`next build` all pass.
+
+Not delivered, deliberately:
+
+- **no roast.** This document lists one among Phase 14's outputs; it belongs to
+  Phase 15 and ADR-015. A test asserts the prompt asks for neither.
+- no retry when an answer is discarded; the violations are returned so a later
+  phase can decide
+- no caching or persistence — Phase 16
+- no UI — Phase 17
+
+Known limitation: the prohibited-phrase lists are English-only, and a model
+could express a banned claim in words none of them match. They are a floor, not
+a proof. The reference and status checks are total; the phrase checks are not.
+
+
+---
+
+## Phase 15 — Complete
+
+Delivered in `lib/roast/`:
+
+- `select.ts` — which findings to roast, and the observation for each. Pure.
+- `templates.ts` — the written punchlines. ~60 specific, plus category and
+  severity fallbacks.
+- `fallback.ts` — the roast that needs no model. Pure, deterministic.
+- `prompt.ts` — the roast instruction and its tone rules.
+- `schema.ts` — the answer's shape.
+- `verify.ts` — subject, abuse and repetition checks, plus Phase 14's prose
+  checks, reused.
+- `generate-roast.ts` — `generateRoast(availability, request)`. Always returns
+  a roast.
+
+Rules worth knowing (ADR-056):
+
+- **an observation plus a punchline, with different authors.** The observation
+  comes from the finding's evidence; only the punchline is ever a model's. The
+  model's answer is `{ findingId, punchline }` — no field in which to state a
+  fact.
+- **the subject is chosen before the model is asked.** Failures and warnings
+  only, in Phase 13's ranked order. A line about a finding it was not given is
+  refused, even a real one.
+- **non-abusive means the website is the target.** Whole-word insult matching,
+  plus patterns for lines aimed at the reader. The templates are held to the
+  same standard by the same lists, in a test.
+- **every failure road leads to the written roast.** No provider, timeout, rate
+  limit, malformed output, rule violation, a provider that throws.
+  `generateRoast` has no failure path; `source` and `fallbackReason` say what
+  happened.
+- **nothing to roast means no lines and no model call.** Asking a model to roast
+  a clean page is inviting it to find something.
+- **the roast never touches the score.** A test asserts `lib/scoring` imports
+  nothing from `lib/roast`.
+- temperature is 0.7 here and zero everywhere else, because a roast written at
+  zero reads like a form letter. The deterministic path has no randomness at
+  all.
+
+Validation: typecheck, lint, format check, 1825 tests (149 for this phase) and
+`next build` all pass. A real deterministic roast was rendered and read, which
+is how the missing `ux.actions.none_identified` template was found.
+
+Not delivered, deliberately:
+
+- no per-line retry; one bad line discards the answer and the written roast is
+  used
+- no profanity filter — swearing at a layout is within ADR-015's brief; what is
+  checked is whether a line attacks a person
+- no UI — Phase 17
+
+Known limitation: the abuse lists are English-only and are a floor, not a proof.
+A new analyzer finding gets a category-level line until someone writes it a
+specific one.
 
 
 ---

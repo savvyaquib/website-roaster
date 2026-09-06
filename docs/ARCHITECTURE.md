@@ -120,7 +120,9 @@ Directories that appear in later phases:
 lib/analysis/           Analyzer modules (Phases 1-11)
 lib/scoring/            Scoring engine and weights (Phase 12)
 lib/recommendations/    Ranked, actionable findings (Phase 13)
-lib/ai/                 Provider abstraction (Phase 14); prompts to follow
+lib/ai/                 Provider abstraction (Phase 14)
+lib/ai/interpretation/  Evidence assembly, prompt, and answer verification
+lib/roast/              Roast engine and its written fallback (Phase 15)
 lib/ai/providers/       Vendor adapters. Imported only by resolve-provider.ts
 ```
 
@@ -158,6 +160,7 @@ See ADR-027.
 | `lib/recommendations` | Ranking findings by impact | Hold a second copy of the scoring model |
 | `lib/ai` | Interpretation of supplied evidence | Produce measurements or scores |
 | `lib/ai/providers` | Speaking one vendor’s API | Be imported outside `lib/ai` |
+| `lib/roast` | Jokes about real findings | Affect the score, or pick its own subject |
 | `app/` | HTTP surface and UI | Contain scoring or analysis logic |
 
 ---

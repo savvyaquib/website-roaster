@@ -2687,6 +2687,244 @@ should be treated as a verification step rather than a formality.
 
 ---
 
+# ADR-055 — The Model Supplies Prose, The Application Supplies Facts
+
+## Status
+
+Accepted
+
+## Context
+
+ADR-003 says the AI interprets evidence rather than producing measurements.
+Phase 14 has to turn that from a statement of intent into something a model
+cannot violate, because a prompt is a request and a model is not obliged to
+honour it.
+
+## Decision
+
+### The answer shape has nowhere to put an invention
+
+A model answer carries only a **reference** to a finding plus prose about it:
+
+```ts
+{ findingId, whyItMatters, recommendation }
+```
+
+No severity. No category. No metric. No score. No element. Every fact in the
+finished interpretation is read back from the `Finding` the model pointed at,
+exactly as Phase 13 reads facts through `recommendation.finding` (ADR-029).
+
+This is the load-bearing decision. A model cannot contradict evidence it was
+never allowed to restate, and cannot invent a finding because the id it gives is
+checked against the ones supplied. The prompt still prohibits invention in
+words — Phase 14's brief requires it, and a model told the rules breaks them
+less often, which means fewer discarded answers — but nothing downstream assumes
+the model obeyed.
+
+### Verification checks claims, not just shape
+
+`schema.ts` decides whether the answer is the right shape. `verify.ts` decides
+whether its claims stand up. Keeping them apart is what lets an error say "the
+answer was the wrong shape" or "the answer referenced a finding that does not
+exist" rather than one vague message covering both.
+
+Four checks, in rising order of how much they rely on judgement:
+
+1. **Every referenced finding exists.** Deterministic and total. This alone
+   makes an invented technical finding impossible to publish.
+2. **No reference contradicts its finding's status.** A failing check cannot be
+   a strength; a passing one cannot be a problem; a `could_not_determine` check
+   can be neither, because it established nothing (ADR-021).
+3. **Every measurement stated appears in the evidence.** A number carrying a
+   unit — `2.4s`, `340ms`, `1.2MB`, `48%` — is a claim about this page. Bare
+   counts are exempt: "3 problems" is prose, not a measurement.
+4. **No prohibited claim.** Security assurances and ranking promises, which
+   CLAUDE.md forbids outright. A named vulnerability class is allowed only when
+   a supplied finding named it first.
+
+### An answer with any violation is discarded whole
+
+Not repaired, not partially used. A model that invented a finding or declared
+the site secure has shown it is not working from the evidence, and keeping the
+paragraphs that happen to validate would mean trusting a source we just caught
+being unreliable.
+
+The alternative — dropping the offending item and keeping the rest — was
+considered and rejected. It makes the report a function of which inventions
+happened to be detectable, and it hides the failure from whoever would otherwise
+fix the prompt. The deterministic report always stands, so the cost of refusing
+is a missing section rather than a missing report.
+
+### Evidence is assembled by construction, and bounded
+
+`evidence.ts` builds a `JsonValue` field by field from analyzer output. There is
+no path by which a live object, a secret, a header, an internal hostname or
+anything else nobody chose to include can reach a provider — ADR-014's boundary
+is a property of how the payload is built rather than a filter applied to it.
+
+Every list is capped and every string clipped, and **what was dropped is
+reported in the payload**. A model told it is seeing 40 of 120 problems can say
+so; one silently handed a subset will reason about a partial page as though it
+were the whole one.
+
+Problems are sorted into Phase 13's ranked order before the cap, so truncation
+drops the least important rather than whatever an analyzer emitted last.
+
+### Failure is ordinary
+
+`interpretAnalysis` returns a result and never throws — including when a
+provider breaks its own contract and throws, which is caught and normalized.
+ADR-016's guarantee is the most important thing this layer has, and it should
+not rest on every adapter being well behaved.
+
+## Deliberately not done
+
+- **No roast.** `docs/IMPLEMENTATION.md` lists one among Phase 14's outputs, but
+  it belongs to Phase 15 and ADR-015, and the phase brief for this work excluded
+  it. A test asserts the prompt asks for neither a roast nor a joke.
+- **No retry on a discarded answer.** The violations are returned, so a later
+  phase can decide whether to re-ask; doing it automatically would double cost
+  on exactly the pages where the model is struggling.
+- **No caching.** An interpretation is not stored anywhere until Phase 16.
+
+## Consequences
+
+- The model can only discuss what the analyzers found. It cannot raise a problem
+  they missed, which is a real limitation and the correct trade against it
+  inventing problems they did not.
+- Prompt changes that make the model chattier about numbers will show up as
+  discarded answers rather than as wrong reports.
+- The phrase lists in `verify.ts` are English-only, and a determined model could
+  express a prohibited claim in words none of them match. They are a floor, not
+  a proof.
+
+---
+
+# ADR-056 — A Roast Line Is An Observation Plus A Punchline
+
+## Status
+
+Accepted
+
+## Context
+
+ADR-015 requires a roast to be humorous, concise, evidence-based, relevant and
+non-abusive, and to avoid fabricating problems to be funnier. Phase 15 adds that
+it must remain useful, must not be the source of the score, and must work when
+AI is unavailable.
+
+The tension is obvious: humour rewards exaggeration, and exaggeration about a
+website is fabrication.
+
+## Decision
+
+### The two halves of a line have different authors
+
+`docs/IMPLEMENTATION.md`'s own example is a fact followed by a joke:
+
+```text
+Your homepage has four CTAs.
+
+Apparently your design strategy is
+"let the visitor choose their destiny."
+```
+
+So a `RoastLine` stores the two separately, and **only the punchline is ever
+written by a model**. The observation is derived from the finding's own
+evidence, reusing Phase 13's title derivation rather than growing a second one.
+
+The model's answer is `{ findingId, punchline }` and nothing else. It has no
+field in which to state a fact, which is the same move ADR-055 made for the
+interpretation and the reason "avoid fabricated problems" is structural here
+rather than aspirational.
+
+### The subject is chosen before the model is asked
+
+`selectRoastTargets` picks the findings — failures and warnings only, never a
+pass, never a `could_not_determine`, never `info` severity — in Phase 13's
+ranked order, and the model is handed exactly those.
+
+Verification then refuses any line about a finding that was not on that list,
+*including a real finding from elsewhere in the report*. Choosing the subject is
+where fabrication starts: a model free to pick its own target will pick the one
+it has the best joke about, not the one that matters.
+
+### Non-abusive means the website is the target and a person never is
+
+This is the one place in the product where a model is invited to be unkind, so
+the line is drawn explicitly and checked. Personal insults are matched as whole
+words, so "idiotic navigation" is caught and "assumption" is not. Second-person
+constructions aimed at the reader — "you are", "whoever built this" — are
+refused; the second-person possessive is not, because "your navigation" is about
+the page.
+
+The written templates are held to the same standard, by the same lists, in a
+test.
+
+### Fallback is a complete roast, not a placeholder
+
+Phase 15 requires fallback behaviour and ADR-016 requires the product to work
+without AI, so the deterministic path uses the same selected findings and the
+same observations, with punchlines from a written table keyed by finding id,
+then category, then severity.
+
+**Every road leads there.** No provider, a timeout, a rate limit, malformed
+output, a rule violation, a provider that throws — all of them fall through, and
+`source` and `fallbackReason` say which happened. `generateRoast` has no failure
+path at all.
+
+This is a deliberate difference from Phase 14, where a failed interpretation
+simply omits a section. A roast can be pre-written; an interpretation of one
+specific page cannot, so there is nothing to fall back to there.
+
+The templates state no facts and contain no digits — the observation carries
+those — and a test asserts it, because a template that repeated a measurement
+could be wrong about a page it has never seen.
+
+### Nothing to roast produces no roast
+
+A site with no failures or warnings gets zero lines and a note saying so, and
+**the model is not called at all**. Asking one to roast a clean page is inviting
+it to find something, which is exactly what ADR-015 forbids. The note says
+plainly that it is neither a joke nor a compliment.
+
+### The roast is downstream of everything and upstream of nothing
+
+`lib/scoring` takes findings and raw measurements (ADR-002) and imports nothing
+from `lib/roast`. A test asserts the dependency runs one way, because "the roast
+must not be the source of the score" is easy to agree with and easy to break
+later with one convenient import.
+
+### Temperature is not zero
+
+Everywhere else in this codebase reproducibility wins. Here the call runs at
+0.7, because a roast written at zero reads like a form letter. It stays low, and
+the verification that follows is unaffected by it.
+
+The deterministic path has no randomness at all: the same findings always
+produce the same roast. A roast that changed on reload would look like the
+report had changed.
+
+## Deliberately not done
+
+- **No per-line retry.** A single bad line discards the whole answer and the
+  written roast is used. Re-asking would cost a second call on exactly the pages
+  where the model is struggling.
+- **No profanity filter.** Swearing at a layout is within ADR-015's brief. What
+  is checked is whether a line attacks a person.
+
+## Consequences
+
+- A roast can only be about problems the analyzers found, which limits how funny
+  it can be and is the correct trade.
+- The template table needs occasional attention: a new analyzer finding gets a
+  category-level line until someone writes it a specific one. A test asserts
+  every template id is a real finding id, so a rename cannot silently disable
+  one.
+- The abuse lists are English-only and are a floor, not a proof.
+
+---
+
 # CHANGE LOG
 
 ## Initial version
@@ -2950,6 +3188,67 @@ Three tests in `lib/config/env.test.ts` were updated: they asserted the exact
 shape of `parseServerEnv`'s result, which gained `ai` and `aiWarnings`. They keep
 their total assertions, taking the AI fields from `parseAiEnv` rather than
 restating them.
+
+## Phase 14 — AI Interpretation
+
+Added ADR-055.
+
+It records the decision the rest of the phase rests on: a model answer carries
+only a **reference** to a finding plus prose about it — no severity, no
+category, no metric, no score — and every fact in the finished interpretation is
+read back from the `Finding` the model pointed at. A model cannot contradict
+evidence it was never allowed to restate, and cannot invent a finding because
+the id it gives is checked. The prompt states the prohibitions because Phase 14's
+brief requires it and because a model told the rules breaks them less often, but
+nothing downstream assumes it obeyed.
+
+It also records that verification checks claims rather than only shape — every
+reference resolves, no reference contradicts its finding's status, every
+measurement stated appears in the evidence, no prohibited security or SEO claim;
+that an answer with any violation is discarded whole rather than repaired,
+because a model caught inventing one thing is not a reliable source for the
+rest; that the evidence payload is assembled field by field so ADR-014's
+boundary is a property of construction rather than a filter, is bounded, and
+reports what it dropped; and that `interpretAnalysis` never throws, catching
+even a provider that breaks its own contract.
+
+No roast was implemented. `docs/IMPLEMENTATION.md` lists one among Phase 14's
+outputs, but it belongs to Phase 15 and ADR-015, and the brief for this work
+excluded it. A test asserts the prompt asks for neither a roast nor a joke.
+
+Also fixed while implementing this phase: the invented-measurement pattern
+ended in `\b` after a unit group that included `%`. A word boundary never
+matches after `%`, so every percentage claim was silently exempt from checking —
+and one test passed vacuously as a result.
+
+## Phase 15 — Roast Engine
+
+Added ADR-056.
+
+It records that a roast line is an observation plus a punchline with different
+authors — the observation derived from the finding's own evidence, only the
+punchline ever written by a model, whose answer is `{ findingId, punchline }`
+and has no field in which to state a fact; that the subject is chosen before the
+model is asked, and a line about any finding it was not given is refused even
+when that finding is real, because choosing the subject is where fabrication
+starts; that non-abusive means the website is the target and a person never is,
+checked by whole-word matching so "idiotic navigation" is caught and
+"assumption" is not; and that the written templates are held to the same
+standard by the same lists.
+
+It also records that the fallback is a complete roast rather than a placeholder,
+that every failure road leads to it — no provider, timeout, rate limit,
+malformed output, rule violation, a provider that throws — so `generateRoast`
+has no failure path at all; that a site with nothing to roast gets no lines and
+no model call, since asking one to roast a clean page is inviting it to find
+something; and that this is the one call in the codebase that does not run at
+temperature zero, because a roast written at zero reads like a form letter.
+
+Phase 14's prose checks were extracted into `checkProse` and are now called by
+both phases, so the security-assurance, ranking-promise and invented-measurement
+phrase lists exist once. `VIOLATION_KINDS` gained `abusive_tone` and
+`repeated_punchline`, which Phase 15 raises: one vocabulary for "why a model
+answer was discarded" rather than two overlapping ones.
 
 New decisions are appended immediately above this section, using the form:
 
