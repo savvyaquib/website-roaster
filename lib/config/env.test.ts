@@ -1,16 +1,31 @@
 import { describe, expect, it } from "vitest";
 
+import { parseAiEnv } from "@/lib/ai/config";
+
 import { EnvValidationError, parseServerEnv } from "./env";
+
+/**
+ * The AI fields when nothing AI-related is set.
+ *
+ * Taken from parseAiEnv rather than restated, so these assertions stay total
+ * without duplicating another module’s wording.
+ */
+const NO_AI = { ai: parseAiEnv({}), aiWarnings: [] };
 
 describe("parseServerEnv", () => {
   it("applies documented defaults when nothing is set", () => {
-    expect(parseServerEnv({})).toEqual({ nodeEnv: "development", logLevel: "info" });
+    expect(parseServerEnv({})).toEqual({
+      nodeEnv: "development",
+      logLevel: "info",
+      ...NO_AI,
+    });
   });
 
   it("reads valid values", () => {
     expect(parseServerEnv({ NODE_ENV: "production", LOG_LEVEL: "warn" })).toEqual({
       nodeEnv: "production",
       logLevel: "warn",
+      ...NO_AI,
     });
   });
 
@@ -28,6 +43,7 @@ describe("parseServerEnv", () => {
     expect(parseServerEnv({ NODE_ENV: "", LOG_LEVEL: "" })).toEqual({
       nodeEnv: "development",
       logLevel: "info",
+      ...NO_AI,
     });
   });
 

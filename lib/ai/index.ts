@@ -30,7 +30,12 @@ export {
   type AiErrorOptions,
 } from "./errors";
 
-export { extractJson, parseStructuredOutput, type JsonExtraction } from "./json";
+export {
+  extractJson,
+  parseStructuredOutput,
+  toJsonValue,
+  type JsonExtraction,
+} from "./json";
 
 export {
   resolveAiProvider,

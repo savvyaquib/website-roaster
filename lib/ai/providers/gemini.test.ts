@@ -9,11 +9,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { AiRequest, FetchLike, ResponseSchema } from "../types";
-import {
-  createGeminiProvider,
-  DEFAULT_GEMINI_MODEL,
-  toGeminiSchema,
-} from "./gemini";
+import { createGeminiProvider, DEFAULT_GEMINI_MODEL, toGeminiSchema } from "./gemini";
 
 const API_KEY = "test-key-abcdefghijklmnop";
 
@@ -51,7 +47,13 @@ const summarySchema: ResponseSchema<Summary> = {
 
     return issues.length > 0
       ? { ok: false, issues }
-      : { ok: true, value: { headline: record.headline as string, points: record.points as string[] } };
+      : {
+          ok: true,
+          value: {
+            headline: record.headline as string,
+            points: record.points as string[],
+          },
+        };
   },
 };
 
@@ -407,7 +409,10 @@ describe("provider failure", () => {
     // A different problem with a different fix: raise the limit, do not retry.
     const body = JSON.stringify({
       candidates: [
-        { content: { parts: [{ text: '{"headline":"Cut off' }] }, finishReason: "MAX_TOKENS" },
+        {
+          content: { parts: [{ text: '{"headline":"Cut off' }] },
+          finishReason: "MAX_TOKENS",
+        },
       ],
     });
 
@@ -540,8 +545,9 @@ describe("malformed model output", () => {
   });
 
   it("does not accept a half-written object", async () => {
-    const result = await provider(geminiFor('{"headline":"Cut off","points":['))
-      .generate(request);
+    const result = await provider(geminiFor('{"headline":"Cut off","points":[')).generate(
+      request,
+    );
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("malformed_output");

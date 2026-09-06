@@ -19,11 +19,30 @@
  * Pure. No network, no clock, no provider knowledge.
  */
 
-import type { ResponseSchema, SchemaParseResult } from "./types";
+import type { JsonValue, ResponseSchema, SchemaParseResult } from "./types";
 
 export type JsonExtraction =
   | { readonly ok: true; readonly value: unknown }
   | { readonly ok: false; readonly reason: string };
+
+/**
+ * Convert a value into evidence an `AiRequest` will accept.
+ *
+ * TypeScript will not assign an interface to `JsonValue` — an interface has no
+ * implicit index signature — so a `ScoreReport` or a `Finding[]` cannot be
+ * passed as evidence directly, however JSON-shaped it is. This is the bridge.
+ *
+ * It is not only a cast. Round-tripping through JSON is what makes ADR-014's
+ * boundary real rather than declared: functions, class instances, getters,
+ * prototypes and cycles do not survive it, so whatever reaches a provider is
+ * inert data and nothing else. A live object cannot be smuggled to a model by
+ * way of a field nobody looked at.
+ *
+ * @throws {TypeError} if the value cannot be serialised, e.g. it has a cycle.
+ */
+export function toJsonValue(value: unknown): JsonValue {
+  return JSON.parse(JSON.stringify(value ?? null)) as JsonValue;
+}
 
 /** Fence markers a model may wrap a code block in. */
 const FENCE = "```";

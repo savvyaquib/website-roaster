@@ -819,6 +819,7 @@ Phase 10 — ✅ Complete
 Phase 11 — ✅ Complete
 Phase 12 — ✅ Complete
 Phase 13 — ✅ Complete
+Phase 14 — 🟡 Foundation only (provider abstraction)
 ...
 ```
 
@@ -1424,6 +1425,64 @@ Not delivered, deliberately:
 - no persistence — Phase 16
 - **ADR-037 is still open**, and now affects the order of the report as well as
   the score
+
+
+---
+
+## Phase 14 — Foundation complete, interpretation not started
+
+The provider abstraction only. No prompts, no evidence assembly, no summary, no
+roast — those are the rest of Phase 14 and Phase 15.
+
+Delivered in `lib/ai/`:
+
+- `types.ts` — `AiProvider`, `AiRequest`, `AiResult`, `ResponseSchema`,
+  `JsonSchema`, `AiImage`.
+- `errors.ts` — the normalized failure vocabulary, redaction, log fields.
+- `json.ts` — recovering structured output from what a model actually returns.
+- `config.ts` — the AI environment variables. Total: never throws.
+- `resolve-provider.ts` — the only name-to-adapter map in the application.
+- `providers/gemini.ts` — **the only file that knows how Gemini works.**
+
+Rules worth knowing (ADR-054, ADR-034):
+
+- **failure is a value.** `generate` returns `AiResult<T>`, so a caller cannot
+  read `.data` without narrowing on `.ok`. ADR-016's guarantee is structural
+  rather than dependent on every caller remembering a try/catch.
+- **the schema is the authority.** A request carries a JSON Schema for the
+  provider's structured-output mode *and* a `parse` function that runs on every
+  response regardless. A provider claiming to enforce a schema is not believed.
+- **malformed output is expected.** Fenced blocks, prose either side and
+  truncation are recovered where possible and refused with a preview where not.
+  Hitting the token limit is `response_truncated`, not `malformed_output` — a
+  different problem with a different fix.
+- **AI misconfiguration cannot stop the application.** Unlike every other
+  variable, a bad AI value disables AI with a specific reason instead of
+  throwing. Asserted against the real pipeline in `degraded-mode.test.ts`.
+- **the key travels in a header**, not `?key=`, so it cannot reach a URL, a log
+  line or an error message (ADR-018).
+- **the vendor boundary is tested.** A test scans every file outside
+  `providers/` for vendor API surface and asserts exactly one module imports an
+  adapter. Swapping vendors is a new file plus a `switch` arm plus `AI_PROVIDER`.
+
+Validation: typecheck, lint, format check, 1504 tests (178 for this phase) and
+`next build` all pass.
+
+**Known gap, stated plainly:** the Gemini wire format is implemented from the
+documented v1beta `generateContent` shape and exercised only against a fake
+`fetch`. No call has been made to Google's servers, because that needs a key
+this repository does not have. The `responseSchema` type casing, the exact
+`finishReason` values and `systemInstruction` support are the parts most likely
+to need adjustment on first real contact. Everything around them — error
+classification, timeouts, JSON recovery, redaction — does not depend on those
+details.
+
+Not delivered, deliberately:
+
+- no prompts and no evidence assembly — the rest of Phase 14
+- no roast — Phase 15
+- no retry loop; `retryable` is exposed for a later phase to act on
+- no caching of AI responses
 
 
 ---

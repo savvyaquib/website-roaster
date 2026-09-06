@@ -318,7 +318,10 @@ export function toGeminiSchema(schema: JsonSchema): Record<string, unknown> {
 
   if (schema.properties !== undefined) {
     translated.properties = Object.fromEntries(
-      Object.entries(schema.properties).map(([key, value]) => [key, toGeminiSchema(value)]),
+      Object.entries(schema.properties).map(([key, value]) => [
+        key,
+        toGeminiSchema(value),
+      ]),
     );
   }
 
@@ -358,10 +361,7 @@ function networkError(
   return new AiError({
     code: "provider_unavailable",
     provider: GEMINI_PROVIDER_NAME,
-    message: redactSecrets(
-      `Could not reach the provider: ${describe(cause)}`,
-      [apiKey],
-    ),
+    message: redactSecrets(`Could not reach the provider: ${describe(cause)}`, [apiKey]),
     cause,
   });
 }

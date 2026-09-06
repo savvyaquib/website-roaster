@@ -966,23 +966,31 @@ Sharing the browser process avoids launching Chromium twice, which is the expens
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
 ADR-004 requires a provider abstraction but names no provider. Phase 14 additionally requires the model to interpret screenshots, which constrains the choice to a multimodal model.
 
-## Proposal
+## Decision
 
-Implement the provider interface with a single V1 adapter, chosen at Phase 14. Whichever provider is selected must:
+**Gemini**, via the `generativelanguage` REST API, implemented in `lib/ai/providers/gemini.ts`.
 
-- expose a multimodal model, because ADR-014 includes screenshots in the AI input;
-- accept image input by value, because there is no artifact store before Phase 16 (ADR-031);
-- be reachable behind a server-side key only (ADR-018).
+It meets all three constraints this ADR recorded:
 
-## Status note
+- **multimodal**, so screenshots can be part of the AI input (ADR-014);
+- **accepts image input by value** as `inlineData`, which is required because there is no artifact store before Phase 16 (ADR-031);
+- **reachable behind a server-side key only** (ADR-018), sent as a header rather than a query parameter so it cannot reach a URL, a log line or an error message.
 
-This must be moved to Accepted before Phase 14 begins. It is recorded now so the constraint on multimodality is not discovered late, but the choice itself needs no resolution until then and depends on pricing and availability at that time.
+It also has a free tier, which is what the phase asked for, and ADR-004's own diagram already listed it first.
+
+The default model is `gemini-2.0-flash`, overridable with `AI_MODEL`, because model names change faster than code does.
+
+## Consequences
+
+- The choice is one file plus one environment variable. `AI_PROVIDER` selects the adapter, and `resolve-provider.ts` is the only module that maps a name to an implementation. A test asserts no vendor API surface appears anywhere else (ADR-004).
+- The wire format is implemented from the documented v1beta `generateContent` shape and exercised only against a fake `fetch`. **It has not been verified against the live API**, because that needs a key this repository does not have. See ADR-054.
+- Free-tier rate limits are real and will be hit. `rate_limited` is classified as retryable so a later phase can decide on backoff; this phase implements no retry loop.
 
 ---
 
@@ -2547,6 +2555,138 @@ and every impact records which was used.
 
 ---
 
+# ADR-054 — The Provider Abstraction, And What It Refuses To Trust
+
+## Status
+
+Accepted
+
+## Context
+
+Phase 14 needs a model. ADR-004 requires that swapping vendors not mean
+redesigning the application, ADR-016 requires that a missing or broken model
+never break the deterministic report, and ADR-018 requires the key to stay
+server-side. This records how those three are actually enforced rather than
+merely intended.
+
+## Decision
+
+### Failure is a value, not an exception
+
+`AiProvider.generate` returns `AiResult<T>` — a discriminated union of data or
+`AiError` — instead of throwing.
+
+ADR-016's guarantee is only as good as the weakest caller, and a forgotten
+`try/catch` is invisible until production. A result type makes the obligation
+structural: `.data` cannot be read without narrowing on `.ok`, so a caller
+cannot accidentally let an AI failure propagate into the report path.
+
+Errors carry a small closed set of codes — `not_configured`, `timeout`,
+`aborted`, `authentication_failed`, `rate_limited`, `provider_unavailable`,
+`invalid_request`, `content_filtered`, `malformed_output`, `response_truncated`,
+`unknown` — plus `retryable` and a `userMessage`. Every user message says the
+measured results are unaffected, because they always are.
+
+### The schema is the authority, never the provider
+
+A request carries a vendor-neutral `JsonSchema` **and** a `parse` function. The
+schema is data an adapter may hand to a vendor's structured-output mode; `parse`
+runs on every response regardless.
+
+A provider that advertises schema enforcement is not trusted to have done it.
+The failure this prevents is the quiet one: a model returning plausible JSON
+with a field of the wrong type, accepted because the vendor said it validated.
+
+### Malformed output is expected, not exceptional
+
+Models asked for JSON return it wrapped in a ``` fence, introduced by a
+sentence, followed by a helpful note, or cut off at the token limit. All of that
+is ordinary behaviour. `lib/ai/json.ts` extracts the most likely JSON value —
+whole text, then fenced block, then the first balanced `{...}` or `[...]`,
+scanned with string and escape awareness so a brace inside a string value does
+not end the span.
+
+What it will not do is guess. Unclosed structures, single quotes, trailing
+commas and bare prose are all refused as `malformed_output`, with a truncated
+preview of what the model actually said, because diagnosing a misbehaving model
+without seeing its output means reproducing it.
+
+Hitting the output limit is reported as `response_truncated` rather than
+`malformed_output`: a different problem with a different fix.
+
+### AI misconfiguration cannot stop the application
+
+Every other variable in `lib/config/env.ts` fails loudly — an invalid value
+throws and the process does not start. **AI configuration is deliberately the
+exception.**
+
+If a typo in `AI_PROVIDER` could stop the application booting, a variable that
+exists only to enable an optional enhancement would be able to take down the
+part that never needed it. So a missing, incomplete or invalid AI configuration
+produces `status: "disabled"` with a specific reason — "AI_PROVIDER is 'gemini'
+but AI_API_KEY is not set", not "unavailable" — and everything else proceeds.
+
+`lib/ai/degraded-mode.test.ts` asserts this against the real pipeline: analyzers,
+scoring and recommendations all still produce a complete report with no AI
+configured, with a broken configuration, and with a provider that fails at call
+time.
+
+### The key never reaches a URL
+
+Gemini accepts `?key=`, and most examples show it that way. The adapter uses the
+`x-goog-api-key` header instead, because a key in a URL ends up in error
+messages, stack traces, proxy logs and anything that records a request line.
+`redactSecrets` covers what a vendor might echo back, and `AiError.toLogFields`
+returns codes and counts rather than message bodies or model output.
+
+Tests assert the key appears in no URL, no error message and no log field.
+
+### The vendor boundary is tested, not just documented
+
+`resolve-provider.ts` is the only module that maps a provider name to an
+implementation, and it uses a `switch` so that adding a name without handling it
+is a type error.
+
+A test scans every file under `lib/` and `app/` outside `providers/` for vendor
+API surface — `generativelanguage`, `x-goog`, `generateContent`, `inlineData`,
+`promptFeedback`, `usageMetadata`, `systemInstruction` — and asserts exactly one
+module imports from `providers/`.
+
+The vendor's *name* is deliberately not on that list: the registry has to say
+"gemini", the supported-provider list has to advertise it, and an operator has
+to type it into `AI_PROVIDER`. What must not escape is knowledge of how the
+vendor's API is shaped.
+
+## Known gap
+
+**The Gemini wire format has not been verified against the live API.** It is
+implemented from the documented v1beta `generateContent` shape and exercised
+only against a fake `fetch`, because a real call needs a key this repository
+does not have.
+
+The parts most likely to need adjustment on first contact are the
+`responseSchema` type casing, the exact `finishReason` values, and whether
+`systemInstruction` is accepted for the configured model. Everything around them
+— error classification, timeout handling, JSON recovery, redaction — is exercised
+exhaustively and does not depend on those details being right.
+
+Phase 8 established that this matters: four Lighthouse audit IDs taken from
+documentation turned out not to exist, and would have produced silent nulls with
+every test passing. The same caution applies here, and the first real call
+should be treated as a verification step rather than a formality.
+
+## Consequences
+
+- Swapping vendors is a new file in `providers/` plus a `switch` arm plus
+  `AI_PROVIDER`. No caller changes.
+- No retry loop is implemented. `retryable` is exposed so a later phase can
+  decide on backoff; free-tier rate limits make that a real decision, not a
+  hypothetical one.
+- Nothing in this phase sends a prompt. There are no Phase 14 prompts, no
+  evidence assembly and no roast — only the foundation those will use.
+
+---
+
 # CHANGE LOG
 
 ## Initial version
@@ -2780,6 +2920,36 @@ would contradict the score shown beside it. The visible consequence — an
 accessibility problem outranking an equally severe security one, because
 `docs/SCORING.md` weights them 15% against 5% — is tested rather than hidden,
 and is a second place ADR-037's open question now shows up.
+
+## Phase 14 foundation — AI Provider Abstraction
+
+Added ADR-054, and moved ADR-034 from Proposed to **Accepted**: the provider is
+Gemini, chosen because it is multimodal, accepts images by value, runs behind a
+server-side key and has a free tier — the three constraints ADR-034 recorded,
+plus the one the phase asked for.
+
+ADR-054 records that AI failure is returned as a value rather than thrown, so
+ADR-016's guarantee is structural instead of depending on every caller
+remembering a try/catch; that the response schema is always re-validated locally
+whatever a provider claims about enforcing it; that malformed model output —
+fences, prose, truncation — is expected and recovered where possible and refused
+with evidence where not; that AI misconfiguration is the one exception to
+`lib/config/env.ts`'s fail-loudly rule, because an optional enhancement must not
+be able to stop the application booting; that the API key travels in a header so
+it cannot reach a URL, a log or an error; and that the vendor boundary is
+enforced by a test scanning for vendor API surface outside `providers/` rather
+than by convention.
+
+It also records a known gap: the Gemini wire format is implemented from
+documentation and exercised only against a fake `fetch`. No call has been made to
+Google's servers, because that needs a key this repository does not have. Phase 8
+established why this is worth writing down — four Lighthouse audit IDs taken from
+documentation turned out not to exist.
+
+Three tests in `lib/config/env.test.ts` were updated: they asserted the exact
+shape of `parseServerEnv`'s result, which gained `ai` and `aiWarnings`. They keep
+their total assertions, taking the AI fields from `parseAiEnv` rather than
+restating them.
 
 New decisions are appended immediately above this section, using the form:
 
