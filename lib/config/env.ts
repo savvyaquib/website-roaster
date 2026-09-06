@@ -15,6 +15,8 @@
  * add a variable before something reads it.
  */
 
+import { parseAiEnv, type AiConfig } from "@/lib/ai/config";
+
 export const NODE_ENVS = ["development", "test", "production"] as const;
 export type NodeEnv = (typeof NODE_ENVS)[number];
 
@@ -24,6 +26,18 @@ export type LogLevel = (typeof LOG_LEVELS)[number];
 export interface ServerEnv {
   readonly nodeEnv: NodeEnv;
   readonly logLevel: LogLevel;
+  /**
+   * AI provider configuration.
+   *
+   * Parsed by `lib/ai/config.ts`, which owns the vendor vocabulary. Unlike
+   * every other variable here, an invalid value **does not throw**: AI is an
+   * optional enhancement and must never be able to stop the deterministic
+   * report from working (ADR-016). Problems arrive as `status: "disabled"`
+   * with a reason, and as entries in `aiWarnings`.
+   */
+  readonly ai: AiConfig;
+  /** Non-fatal AI configuration problems, for logging at startup. */
+  readonly aiWarnings: readonly string[];
 }
 
 /** Raw environment source. Narrower than `process.env` so tests can supply one. */
@@ -83,7 +97,18 @@ export function parseServerEnv(source: EnvSource): ServerEnv {
     throw new EnvValidationError(issues);
   }
 
-  return Object.freeze({ nodeEnv, logLevel });
+  // Parsed after the throw above, and never contributing to it: an AI
+  // misconfiguration disables AI rather than stopping the application
+  // (ADR-016). See lib/ai/config.ts.
+  const aiWarnings: string[] = [];
+  const ai = parseAiEnv(source, aiWarnings);
+
+  return Object.freeze({
+    nodeEnv,
+    logLevel,
+    ai,
+    aiWarnings: Object.freeze(aiWarnings),
+  });
 }
 
 let cached: ServerEnv | undefined;
