@@ -2925,6 +2925,131 @@ report had changed.
 
 ---
 
+# ADR-057 — The Analysis API And Its Job Store
+
+## Status
+
+Accepted
+
+## Context
+
+ADR-031 required the job store to arrive with this phase: an asynchronous API
+needs state that outlives a request, route handlers are stateless, and
+module-level state would appear to work locally and fail on the first restart or
+second worker. It left the concrete store to be chosen here.
+
+## Decision
+
+### A directory of JSON files, one per job
+
+ADR-031 asks for "the simplest thing that survives a process restart" and
+ADR-020 forbids reaching for infrastructure before a constraint demands it. A
+file per job survives a restart, needs no dependency, no schema migration and no
+daemon, and can be read with `cat` when something is wrong.
+
+Writes go to a temporary file and are renamed into place. `rename` is atomic for
+a same-directory move, so a reader never sees a half-written record and a crash
+mid-write leaves the previous version intact rather than a truncated one.
+
+`node:sqlite` is available on this runtime and was the alternative. It was not
+chosen **yet**: it buys indexed queries and transactions, and every access in
+this phase is by primary key. Phase 19 adds history and retention, which is
+where those start to matter, and the `JobStore` interface exists so that swap
+costs one file.
+
+There is no locking. A job is written only by the one runner executing it, and
+two different jobs never contend because they are different files. If Phase 20's
+concurrency work introduces shared writers, that is the assumption that breaks
+first.
+
+### The job id is a capability, and a filename
+
+There are no accounts in V1, so a job id is the only thing separating one
+person's report from another's — hence a v4 UUID rather than anything
+sequential.
+
+It is also the store's filename, so anything that is not exactly a UUID is
+refused **before** it reaches the filesystem. `../../etc/passwd` is a perfectly
+good string and a very bad file name. The route validates and the store
+validates again; the second check is not redundant, it is the one that holds if
+a future caller forgets the first.
+
+A malformed id returns `not_found`, not a validation error. Distinguishing "that
+is not an id" from "no such job" would tell an enumerating client which of its
+guesses were the right shape, and neither is a job.
+
+### A refused submission is still an analysis
+
+ADR-011 makes `invalid_url` and `blocked` analysis *states*, so a refusal is an
+analysis that was refused: it gets a job, a record and a retrievable URL like
+any other. The POST response carries the structured error immediately as well —
+400 for `invalid_url`, 403 for `blocked` — so a client never has to poll to
+learn it typed something wrong.
+
+The cost is that every malformed submission writes a file. Rate limiting is
+Phase 20's, which is where it already belonged.
+
+### Validation cannot be bypassed, by construction
+
+The job stores the **normalized** URL from `validateUrl`, and the runner is
+handed that stored value. `submittedUrl` is kept only so a refusal can show the
+user what they typed; it is never fetched, resolved, or used as an input to
+anything.
+
+`runAnalysis` accepts a network-policy override so an end-to-end test can reach
+a server on 127.0.0.1, which the production policy correctly refuses. That is a
+hazard worth naming: `handleCreateAnalysis` calls the runner with the URL and
+nothing else, and a test pins the exact argument list, so there is no path from
+a request to that field.
+
+### Route files contain no decisions
+
+`app/api/analyze/route.ts` is three lines. Everything — validation, job
+creation, status codes, what a client is told — lives in `lib/api`, which takes
+a `Request`, returns a `Response`, and knows nothing about Next.js or React.
+
+That is what "keep the API independent from frontend presentation" means here,
+and it is also what makes the integration tests real: they drive the same
+function the route does, with the same `Request` objects.
+
+The DTO is built field by field rather than spread from the stored record. A
+whitelist fails closed; a filter fails open, and a field added to `AnalysisJob`
+later would appear in API responses because somebody forgot to exclude it.
+
+### Errors are structured, and internal detail never leaves the process
+
+Every error is `{ error: { code, message, details? } }`. `code` is stable and
+machine-readable; `message` is written for the person who submitted the URL.
+
+`internal_error` carries one fixed sentence. Whatever is in an unexpected
+exception is by definition something nobody decided was safe to publish, so it
+goes to the log and not to the client. Tests assert that a store failure
+mentioning a filesystem path produces a response that does not.
+
+## What this phase does not run
+
+Accessibility, performance and mobile need a real browser and a Lighthouse run
+(ADR-006, ADR-007). They are **not wired into the pipeline**, and their
+categories come back as *not assessed* with the weights redistributed (ADR-036)
+rather than as zeros. Every report names them in `notRun`.
+
+Wiring them was deliberately deferred rather than done untested: this
+environment has no Chromium, and shipping unexercised browser orchestration
+inside the API would be worse than shipping an API that says plainly which
+analyzers it ran.
+
+## Consequences
+
+- The report stored in a job embeds findings twice — once in `findings`, again
+  inside `recommendations` and `roast`, which hold finding references that
+  serialize by value. It is a snapshot, so the duplication is harmless, but it
+  makes stored records larger than they need to be.
+- `.data/` is gitignored. A deployment must point `ANALYSIS_STORE_DIR` at a
+  mounted volume or lose every report on each new build.
+- Nothing expires. Retention is Phase 19's, and until then the directory grows.
+
+---
+
 # CHANGE LOG
 
 ## Initial version
@@ -3249,6 +3374,44 @@ both phases, so the security-assurance, ranking-promise and invented-measurement
 phrase lists exist once. `VIOLATION_KINDS` gained `abusive_tone` and
 `repeated_punchline`, which Phase 15 raises: one vocabulary for "why a model
 answer was discarded" rather than two overlapping ones.
+
+## Phase 16 — Analysis API
+
+Added ADR-057, which settles the store ADR-031 deferred to this phase: a
+directory of JSON files, one per job, written to a temporary name and renamed
+into place so a reader never sees a half-written record. `node:sqlite` is
+available and was the alternative; it was not chosen yet because every access
+here is by primary key, and the `JobStore` interface exists so Phase 19's
+history and retention work can swap it for one file's worth of change.
+
+It records that a job id is both a capability — the only thing separating one
+person's report from another's, since V1 has no accounts — and a filename, so
+anything that is not exactly a UUID is refused before it reaches the filesystem,
+by the route and again by the store; that a malformed id returns `not_found`
+rather than a validation error, because distinguishing the two only helps an
+enumerating client; that a refused submission is still an analysis, with a job
+and a retrievable record, while the POST also carries the structured error
+immediately; that validation cannot be bypassed because the runner is handed the
+stored normalized URL and never the submitted string; that route files contain
+no decisions, which is what makes the integration tests drive the real request
+path; and that the DTO is a whitelist built field by field, because a filter
+fails open.
+
+It also names what the pipeline does not run. Accessibility, performance and
+mobile need a real browser and a Lighthouse run, and wiring them was deferred
+rather than done untested — this environment has no Chromium. Their categories
+come back not assessed with the weights redistributed (ADR-036), and every
+report names them in `notRun`.
+
+`runAnalysis` takes a network-policy override so an end-to-end test can reach a
+server on 127.0.0.1. That is a hazard worth naming, so a test pins the exact
+argument list the API passes the runner: the URL, and nothing else.
+
+Three tests in `lib/config/env.test.ts` were updated for the new
+`analysisStoreDir` field, the same way they were updated for the AI fields. One
+job-store test was corrected: it asserted `updatedAt` differed from the previous
+value, which fails at random when an in-memory update lands inside the same
+millisecond. It now asserts the stamp moved forward.
 
 New decisions are appended immediately above this section, using the form:
 

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import path from "node:path";
+
 import { parseAiEnv } from "@/lib/ai/config";
 
 import { EnvValidationError, parseServerEnv } from "./env";
@@ -12,12 +14,21 @@ import { EnvValidationError, parseServerEnv } from "./env";
  */
 const NO_AI = { ai: parseAiEnv({}), aiWarnings: [] };
 
+/**
+ * The default job-store directory.
+ *
+ * Derived the same way env.ts derives it, so this stays an assertion about the
+ * default rather than a copy of a path that would differ per machine.
+ */
+const DEFAULT_STORE = { analysisStoreDir: path.join(process.cwd(), ".data", "jobs") };
+
 describe("parseServerEnv", () => {
   it("applies documented defaults when nothing is set", () => {
     expect(parseServerEnv({})).toEqual({
       nodeEnv: "development",
       logLevel: "info",
       ...NO_AI,
+      ...DEFAULT_STORE,
     });
   });
 
@@ -26,6 +37,7 @@ describe("parseServerEnv", () => {
       nodeEnv: "production",
       logLevel: "warn",
       ...NO_AI,
+      ...DEFAULT_STORE,
     });
   });
 
@@ -44,6 +56,7 @@ describe("parseServerEnv", () => {
       nodeEnv: "development",
       logLevel: "info",
       ...NO_AI,
+      ...DEFAULT_STORE,
     });
   });
 
@@ -79,5 +92,25 @@ describe("parseServerEnv", () => {
   it("returns a frozen object so configuration cannot drift at runtime", () => {
     const env = parseServerEnv({});
     expect(Object.isFrozen(env)).toBe(true);
+  });
+});
+
+describe("the job store directory", () => {
+  it("defaults under the working directory", () => {
+    expect(parseServerEnv({}).analysisStoreDir).toBe(
+      path.join(process.cwd(), ".data", "jobs"),
+    );
+  });
+
+  it("reads ANALYSIS_STORE_DIR when set", () => {
+    expect(parseServerEnv({ ANALYSIS_STORE_DIR: "/var/roaster" }).analysisStoreDir).toBe(
+      "/var/roaster",
+    );
+  });
+
+  it("treats an empty value as unset", () => {
+    expect(parseServerEnv({ ANALYSIS_STORE_DIR: "   " }).analysisStoreDir).toBe(
+      path.join(process.cwd(), ".data", "jobs"),
+    );
   });
 });

@@ -15,7 +15,13 @@
  * add a variable before something reads it.
  */
 
+import path from "node:path";
+
 import { parseAiEnv, type AiConfig } from "@/lib/ai/config";
+
+/** Default location for job records. Under the working directory, so local
+ * development needs no configuration. */
+const DEFAULT_STORE_DIR = path.join(process.cwd(), ".data", "jobs");
 
 export const NODE_ENVS = ["development", "test", "production"] as const;
 export type NodeEnv = (typeof NODE_ENVS)[number];
@@ -38,6 +44,13 @@ export interface ServerEnv {
   readonly ai: AiConfig;
   /** Non-fatal AI configuration problems, for logging at startup. */
   readonly aiWarnings: readonly string[];
+  /**
+   * Where analysis job records are kept (ADR-031).
+   *
+   * A deployment points this at a mounted volume; the default sits under the
+   * working directory so local development needs no configuration.
+   */
+  readonly analysisStoreDir: string;
 }
 
 /** Raw environment source. Narrower than `process.env` so tests can supply one. */
@@ -97,6 +110,8 @@ export function parseServerEnv(source: EnvSource): ServerEnv {
     throw new EnvValidationError(issues);
   }
 
+  const storeDir = source.ANALYSIS_STORE_DIR?.trim();
+
   // Parsed after the throw above, and never contributing to it: an AI
   // misconfiguration disables AI rather than stopping the application
   // (ADR-016). See lib/ai/config.ts.
@@ -108,6 +123,8 @@ export function parseServerEnv(source: EnvSource): ServerEnv {
     logLevel,
     ai,
     aiWarnings: Object.freeze(aiWarnings),
+    analysisStoreDir:
+      storeDir === undefined || storeDir.length === 0 ? DEFAULT_STORE_DIR : storeDir,
   });
 }
 

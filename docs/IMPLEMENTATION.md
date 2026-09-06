@@ -821,6 +821,7 @@ Phase 12 — ✅ Complete
 Phase 13 — ✅ Complete
 Phase 14 — ✅ Complete
 Phase 15 — ✅ Complete
+Phase 16 — ✅ Complete
 ...
 ```
 
@@ -1600,6 +1601,66 @@ Not delivered, deliberately:
 Known limitation: the abuse lists are English-only and are a floor, not a proof.
 A new analyzer finding gets a category-level line until someone writes it a
 specific one.
+
+
+---
+
+## Phase 16 — Complete
+
+Delivered:
+
+- `lib/jobs/` — the job store. `types.ts`, `id.ts`, `file-store.ts` (atomic,
+  one file per job), `memory-store.ts` (tests only), `store.ts` (the singleton).
+- `lib/pipeline/run-analysis.ts` — the analysis pipeline, end to end.
+- `lib/api/` — `analysis-service.ts` (the whole API, without HTTP),
+  `analysis-dto.ts`, `errors.ts`.
+- `app/api/analyze/route.ts` — `POST`, three lines.
+- `app/api/analyze/[id]/route.ts` — `GET`, three lines.
+- `ANALYSIS_STORE_DIR` in `lib/config/env.ts` and `.env.example`; `.data/`
+  gitignored.
+
+Every state in ADR-011 is reachable: `queued` on acceptance, `running` once the
+pipeline starts, `completed` with a report, `failed`/`timeout`/`blocked` from
+the pipeline's outcome, and `invalid_url`/`blocked` from a refused submission.
+
+Rules worth knowing (ADR-057):
+
+- **a job id is a capability and a filename.** A v4 UUID, refused by the route
+  and again by the store if it is anything else. A malformed id returns
+  `not_found`, not a validation error.
+- **a refused submission is still an analysis** — it gets a job and a
+  retrievable record, and the POST also returns the structured error (400 for
+  `invalid_url`, 403 for `blocked`).
+- **validation cannot be bypassed.** The job stores the normalized URL and the
+  runner is handed that; `submittedUrl` is kept only to explain a refusal and is
+  never fetched or resolved.
+- **route files contain no decisions.** `lib/api` takes a `Request` and returns
+  a `Response`, knowing nothing about Next.js — which is why the integration
+  tests drive the real request path.
+- **the DTO is a whitelist**, built field by field. A filter fails open.
+- **`internal_error` carries one fixed sentence.** Unexpected detail goes to the
+  log, never to a client, and a test asserts a store failure mentioning a
+  filesystem path produces a response that does not.
+
+Validation: typecheck, lint, format check, 1941 tests (93 for this phase) and
+`next build` all pass, with both routes registered dynamic. The pipeline tests
+run the real analyzers against a real local HTTP server.
+
+Not delivered, deliberately:
+
+- **accessibility, performance and mobile are not wired into the pipeline.**
+  They need a browser and Lighthouse, this environment has no Chromium, and
+  shipping unexercised browser orchestration inside the API would be worse than
+  an API that says which analyzers it ran. Their categories are *not assessed*
+  with weights redistributed (ADR-036), and `notRun` names them in every report.
+- no rate limiting or concurrency control — Phase 20
+- no retention or history — Phase 19
+- no UI — Phase 17
+
+Known limitations: the stored report embeds findings more than once, because
+recommendations and roast lines hold finding references that serialize by value.
+Nothing expires, so the store grows until Phase 19. A deployment must point
+`ANALYSIS_STORE_DIR` at a mounted volume or lose every report on each build.
 
 
 ---
