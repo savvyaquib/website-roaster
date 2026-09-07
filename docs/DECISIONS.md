@@ -3163,6 +3163,110 @@ problems.
 
 ---
 
+# ADR-059 — The Share Card Is An Invitation, Not A Summary
+
+## Status
+
+Accepted
+
+## Context
+
+Phase 18 asks for a card carrying five things — the site, the overall score, key
+category scores, one memorable roast, the product's identity — and is explicit
+that it must not be information-dense. Everything about the card is therefore a
+decision about what to leave out.
+
+## Decision
+
+### Rendered with `next/og`, which is not a browser
+
+`ImageResponse` draws through Satori: flexbox only, no grid, no CSS variables,
+no Tailwind, and every element with more than one child needs an explicit
+`display: flex`. The card's colours are literal hex copies of the light-mode
+tokens in `app/globals.css`.
+
+It arrives as `app/a/[id]/opengraph-image.tsx`, which is Next's file
+convention: exporting it from the route segment makes it the `og:image` **and**
+`twitter:image` for that page automatically, so there is no image URL to keep in
+sync with the metadata by hand.
+
+No new dependency. `next/og` ships with the framework.
+
+### One typeface, and why
+
+The interface pairs Plex Sans with Plex Mono. Satori needs font *data*, not a
+CSS family, and the only font files on disk are hashed woff2 build artifacts
+whose names change every build.
+
+Fetching a font over the network while rendering a share image was rejected: it
+is a request that can fail, and a card that renders differently depending on
+whether a font server answered is not a card anybody can rely on. The card uses
+the renderer's built-in face and builds hierarchy from size, weight and colour.
+This is the one place the product's typography does not match the app, and it is
+a constraint of rendering to an image rather than a preference.
+
+### Reading order is site, score, joke
+
+Somebody scrolling past a link preview asks "which site?" before "how did it
+do?", so the host leads even though the numeral is the larger thing. The first
+attempt put the host at the bottom; looking at the rendered image made the
+problem obvious in a way the markup did not.
+
+The roast is the payload — it is the reason anybody shares one of these — so it
+occupies the larger half and is set at reading size.
+
+### What it leaves out
+
+No findings, no recommendations, no evidence, no interpretation. The card is an
+invitation to the report, not a substitute for it.
+
+**Unassessed categories are omitted entirely.** A card has no room to explain
+"not assessed", and showing a zero would be the lie ADR-021 exists to prevent,
+so a category with no score simply does not appear. Four fit legibly at
+thumbnail scale; a fifth would shrink all of them, so extras become "+N more".
+
+### A long punchline is skipped, not cut
+
+`selectRoastLine` takes the highest-ranked line whose punchline fits, and only
+truncates when every line is too long. A joke with its ending removed is not a
+joke, and the roast has three other lines to offer.
+
+Long hosts lose their **middle**, not their tail: `some-startup-with…example.io`
+is still recognisable in a way that a head-truncated host is not.
+
+### A failed analysis still gets a card
+
+A social platform that fetches a preview does not retry, so an empty response
+would leave a broken preview attached to that link permanently. An analysis with
+no report renders its status — "Address refused", "Timed out" — in the unknown
+grey, and says nothing was measured. So does a job id that does not exist.
+
+### Tested by rendering, at the real size
+
+The card is rendered through the same `ImageResponse` the route uses, and its
+dimensions are read back **out of the PNG's IHDR chunk** rather than trusted
+from the arguments passed in — a renderer that ignored them would fail the test.
+Every state is rendered: perfect score, failing score, zero, no score, no
+categories, no roast, a long host, and the longest punchline the card allows.
+
+Looking at the output caught three defects that passing tests did not: a long
+host wrapping and pushing the wordmark onto two lines, a rule left dangling
+under an empty category strip, and the site being the least prominent thing on a
+card about that site.
+
+## Consequences
+
+- The card is drawn on request, not at build time, because a report does not
+  exist until somebody runs one. Each render is a Satori pass — cheap, but not
+  free, and uncached.
+- The card's typography differs from the app's. That is visible if the two are
+  seen side by side.
+- `lib/share/card-data.ts` holds every editorial decision as a pure function, so
+  what the card *says* is tested without rendering an image, and what it *looks
+  like* is tested by rendering one.
+
+---
+
 # CHANGE LOG
 
 ## Initial version
@@ -3562,6 +3666,37 @@ problems.
 
 Six `<a href="/">` links were converted to `next/link`, and an unused import
 from the Phase 16 pipeline test was removed.
+
+## Phase 18 — Shareable Result
+
+Added ADR-059.
+
+It records that the card is drawn with `next/og` — no new dependency — as
+`app/a/[id]/opengraph-image.tsx`, which is Next's file convention, so the image
+becomes both `og:image` and `twitter:image` with no URL to keep in sync by hand;
+that Satori is not a browser, so the layout is flexbox only and the colours are
+literal copies of the light-mode tokens; and that the card uses a single
+typeface because Satori needs font data and fetching one over the network while
+rendering a share image would make the card depend on a request that can fail.
+
+It records the reading order — site, then score, then joke — and why: somebody
+scrolling past a preview asks "which site?" first. It records what the card
+leaves out, including that unassessed categories are omitted entirely rather
+than shown as zero, since a card has no room to explain "not assessed" and a
+zero would be the lie ADR-021 exists to prevent. It records that a long
+punchline is skipped in favour of the next line rather than cut off, and that a
+long host loses its middle rather than its tail.
+
+It also records that a failed analysis still gets a card. A social platform that
+fetches a preview does not retry, so returning nothing would leave a broken
+preview attached to that link permanently.
+
+The card is tested by rendering it through the same `ImageResponse` the route
+uses and reading its dimensions back out of the PNG header, rather than trusting
+the width and height passed in. Looking at the rendered output caught three
+things the passing tests did not: a long host wrapping and pushing the wordmark
+onto two lines, a rule left dangling beneath an empty category strip, and the
+site being the least prominent thing on a card about that site.
 
 New decisions are appended immediately above this section, using the form:
 

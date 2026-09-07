@@ -823,6 +823,7 @@ Phase 14 — ✅ Complete
 Phase 15 — ✅ Complete
 Phase 16 — ✅ Complete
 Phase 17 — ✅ Complete
+Phase 18 — ✅ Complete
 ...
 ```
 
@@ -1715,6 +1716,55 @@ Known limitation: component tests assert rendered HTML, which covers wording,
 stated absences and accessible names, but not layout or interaction. Those were
 checked by looking, not by a test, and a regression in them would not fail the
 build.
+
+
+---
+
+## Phase 18 — Complete
+
+Delivered:
+
+- `lib/share/card-data.ts` — every editorial decision, as pure functions.
+- `app/_components/share-card.tsx` — the card, drawn for Satori.
+- `app/a/[id]/opengraph-image.tsx` — the route, wired into metadata by Next's
+  file convention.
+- `app/_components/share-bar.tsx` — copy the link.
+- `openGraph` and `twitter` metadata on the analysis page.
+
+The card carries the site, the overall score with the report's grade-band scale,
+up to four category scores, one roast line, and the product's name. Nothing
+else.
+
+Rules worth knowing (ADR-059):
+
+- **it is an invitation, not a summary.** No findings, no recommendations, no
+  evidence.
+- **unassessed categories are omitted**, never shown as zero. A card has no room
+  to explain "not assessed", and a zero would be a lie (ADR-021).
+- **a long punchline is skipped, not cut.** A joke with its ending removed is
+  not a joke, and the roast has other lines.
+- **a failed analysis still gets a card**, because a platform that fetches a
+  preview does not retry.
+- **one typeface**, because Satori needs font data and fetching a font while
+  rendering would make the card depend on a request that can fail.
+
+Validation: typecheck, lint, format check, 2068 tests (39 for this phase) and
+`next build` all pass. The card is rendered at 1200×630 and its size read back
+from the PNG header; every state is rendered, including no score, no categories,
+no roast, a long host and the longest punchline allowed. End to end against the
+running server, `og:image` serves a 62KB PNG and the meta tags carry the correct
+dimensions, `summary_large_image`, and the roast as the description.
+
+Not delivered, deliberately:
+
+- no per-platform variants (square, portrait). 1200×630 is what every major
+  platform crops from.
+- no caching of rendered cards — each request is a fresh Satori pass
+- no screenshot of the site on the card; the browser pass is not wired into the
+  API (ADR-057)
+
+Known limitation: the card's typeface differs from the app's, which is visible
+if the two are seen side by side.
 
 
 ---

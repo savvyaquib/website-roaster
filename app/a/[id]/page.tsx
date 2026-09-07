@@ -17,6 +17,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { getJobStore, isJobId } from "@/lib/jobs";
+import { shareCardData, shareDescription } from "@/lib/share/card-data";
 import type { AnalysisJob } from "@/lib/jobs";
 import { isTerminalAnalysisStatus } from "@/lib/types/analysis";
 import { categoryLabel, formatDuration, hostOf, statusCopy } from "@/lib/ui/format";
@@ -25,6 +26,7 @@ import { FindingRow, RecommendationRow, StrengthRow } from "../../_components/fi
 import { Interpretation, RoastPanel, Screenshots } from "../../_components/narrative";
 import { Datum, Empty, Masthead, Section, Shell } from "../../_components/primitives";
 import { ProgressView } from "../../_components/progress";
+import { ShareBar } from "../../_components/share-bar";
 import { CategoryBar, OverallScore } from "../../_components/score-scale";
 
 /** How many ranked problems the report leads with before the full list. */
@@ -53,11 +55,20 @@ export async function generateMetadata({
   const host = job.url === null ? job.submittedUrl : hostOf(job.url);
   const score = job.report?.score.overall.score;
 
+  const data = shareCardData(job);
+  const title =
+    score === undefined
+      ? `${host} — Website Roaster`
+      : `${host} scored ${score}/100 — Website Roaster`;
+  const description = shareDescription(data);
+
+  // The card itself comes from opengraph-image.tsx, which Next wires into both
+  // og:image and twitter:image, so there is no image URL to keep in sync here.
   return {
-    title:
-      score === undefined
-        ? `${host} — Website Roaster`
-        : `${host} scored ${score}/100 — Website Roaster`,
+    title,
+    description,
+    openGraph: { title, description, type: "article" },
+    twitter: { card: "summary_large_image", title, description },
   };
 }
 
@@ -180,6 +191,10 @@ function Report({
           <Datum label="Problems found" value={recommendations.summary.fixes} />
           <Datum label="Analysis time" value={formatDuration(report.durationMs)} />
         </dl>
+
+        <div className="mt-8">
+          <ShareBar />
+        </div>
       </section>
 
       <Section
