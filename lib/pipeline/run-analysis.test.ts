@@ -16,7 +16,6 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { publicHttpSecurityPolicy } from "@/lib/analysis/http";
 import type { HttpSecurityPolicy } from "@/lib/analysis/http";
-import { validateUrl } from "@/lib/analysis/url";
 import { createLogger } from "@/lib/observability/logger";
 
 import { NOT_RUN_IN_THIS_PHASE, runAnalysis } from "./run-analysis";

@@ -167,6 +167,8 @@ See ADR-027.
 | `lib/jobs` | Job state that outlives a request | Know anything about HTTP |
 | `lib/pipeline` | Running the analyzers in order | Accept an unvalidated URL |
 | `lib/api` | Request in, response out | Import React, or know about Next.js |
+| `lib/ui` | How a value is spelled and coloured | Decide what a value is |
+| `app/_components` | The interface | Compute a score, or invent a state |
 | `app/` | HTTP surface and UI | Contain scoring or analysis logic |
 
 ---

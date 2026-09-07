@@ -11,8 +11,10 @@ export default defineConfig({
     alias: [{ find: "@", replacement: join(projectRoot) }],
   },
   test: {
-    // Unit tests are colocated with the code they cover.
-    include: ["lib/**/*.test.ts"],
+    // Unit tests are colocated with the code they cover. UI components are
+    // rendered to static markup rather than driven in a browser, so they need
+    // no DOM environment and no extra dependency.
+    include: ["lib/**/*.test.ts", "lib/**/*.test.tsx", "app/**/*.test.tsx"],
     environment: "node",
     clearMocks: true,
   },

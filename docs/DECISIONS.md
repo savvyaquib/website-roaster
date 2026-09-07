@@ -3050,6 +3050,119 @@ analyzers it ran.
 
 ---
 
+# ADR-058 — The Interface Shows Its Working
+
+## Status
+
+Accepted
+
+## Context
+
+Phase 17 builds the first user-facing surface over a pipeline whose entire
+argument is that every number traces back to something observed. An interface
+can undo that in a single component: a gauge that hides its model, a zero where
+a measurement is missing, a progress bar that animates a story nobody measured.
+
+## Decision
+
+### The accent colour is the data
+
+There is no brand hue. The only saturated colours in the interface are the grade
+bands — good, fair, poor — plus a fourth for **unknown**, so colour always means
+something measured. `unknown` is a first-class role rather than a styling
+afterthought, because "not assessed" is a first-class result (ADR-021, ADR-036).
+
+### One scale, with the grade boundaries drawn on it
+
+The overall score is a numeral over a horizontal scale marked at 60, 70, 80 and
+90, and every category is drawn on that same scale. A ring gauge would show one
+number and hide the model; this shows how far a point is from changing the
+letter, and lets two categories be compared by eye.
+
+The boundaries are read from `GRADE_BANDS` rather than typed into the component,
+so the marks cannot drift from the scoring engine. A test asserts that.
+
+### A category that was not assessed is hatched, never zero
+
+An unassessed track is drawn with diagonal hatching and reads `n/a`, with the
+reason in words beneath it. An empty bar would be indistinguishable from a score
+of zero, which is the exact confusion ADR-021 exists to prevent — and the
+scoring engine went to some trouble to keep the two apart.
+
+### Progress says only what is known
+
+The API reports `queued` and `running`. It does not report which analyzer is
+working, so there is no five-step stepper. A stepper would be animating a story
+nobody measured — the same failure as an invented metric, with nicer corners.
+
+What is shown is the state, an elapsed counter, and a single sweeping bar that
+marks work without claiming to know how much is left. The elapsed counter sits
+outside the `aria-live` region, because a screen reader announcing a new number
+five times a second is unusable.
+
+### Evidence is one keystroke away, using the platform
+
+Every finding is a native `<details>`. That gives keyboard operation, screen
+reader semantics and correct printing for free, with no state, no library and no
+ARIA of its own. Each disclosure shows the observations, marked `measured` or
+`inferred` (ADR-009), and the finding id, so a line in the interface can be
+traced to a line in the store.
+
+### Absence is always stated
+
+Interpretation, roast and screenshots all render an explanation when they are
+empty rather than disappearing. A section that silently vanishes is
+indistinguishable from one that had nothing to report, and in this product the
+difference is usually the interesting part.
+
+Screenshots have their own entry: the browser pass is not wired into the API
+(ADR-057), so that section names the reason instead of leaving a gap.
+
+### Typography separates measurement from prose
+
+Plex Mono carries measured values, finding identifiers and header strings —
+things a reader might copy or compare. Plex Sans carries prose. The roast is the
+one place where prose is set larger than the data, which is the interface's
+single bold moment: the fact in mono, the joke beneath it at reading size.
+
+Geist, the framework's default pairing, was deliberately not used.
+
+### The page reads the store; a small client component keeps it live
+
+The analysis page is a server component reading the job store directly, not
+fetching its own API — that would be an HTTP round trip inside the same process
+for data already on disk. While the job is not terminal, a client component
+polls the API and asks the page to re-render.
+
+So progress is live and the finished report is server-rendered, which is what
+Phase 18's shareable result will need.
+
+## Testing
+
+Components are rendered with `react-dom/server` and asserted as HTML strings.
+That needs no DOM environment, no testing library and no new dependency, and it
+covers what matters most here: the words, the stated absences, and what a screen
+reader is given.
+
+It does not cover layout or interaction. Those were checked by building, running
+the server and looking at the result at 1200px, at 390px and in dark mode —
+which is how the two defects found in review were found: an unassessed
+category's reason crushed into a narrow grid column on a phone, and "Passed /
+Info" repeated beside seventeen passing checks, burying the handful of real
+problems.
+
+## Consequences
+
+- The interface has no loading skeletons. A skeleton guessing at the shape of a
+  report would flash a layout about to be replaced; the states are cheap enough
+  to render for real.
+- Colour is never the only signal: every score carries its number and letter,
+  and every finding carries its outcome in words.
+- `lib/ui/format.ts` holds the presentation logic so it can be tested without a
+  renderer. It decides how a value is spelled, never what the value is.
+
+---
+
 # CHANGE LOG
 
 ## Initial version
@@ -3412,6 +3525,43 @@ Three tests in `lib/config/env.test.ts` were updated for the new
 job-store test was corrected: it asserted `updatedAt` differed from the previous
 value, which fails at random when an in-memory update lands inside the same
 millisecond. It now asserts the stamp moved forward.
+
+## Phase 17 — Analysis UI
+
+Added ADR-058.
+
+It records that the interface has no brand colour — the only saturated hues are
+the grade bands plus a fourth for *unknown*, so colour always means something
+measured; that the overall score is a numeral over a scale marked at the grade
+boundaries, with every category on that same scale, because a ring gauge shows
+one number and hides the model; that the boundaries are read from `GRADE_BANDS`
+rather than typed into a component, with a test pinning it; and that an
+unassessed category is hatched and labelled `n/a` with its reason in words,
+because an empty bar is indistinguishable from a zero.
+
+It records that progress shows only what the API knows. There is no five-step
+stepper, because the API reports `queued` and `running` and nothing about which
+analyzer is working — animating a story nobody measured is the same failure as
+an invented metric.
+
+It also records that evidence sits behind a native `<details>`, which supplies
+keyboard operation and screen-reader semantics without a library; that absence
+is always stated, so interpretation, roast and screenshots explain themselves
+when empty rather than disappearing; that Plex Mono carries measurements and
+Plex Sans carries prose, with the roast the one place prose is set larger than
+data; and that the analysis page is a server component reading the store
+directly, with a small client component polling to keep it live.
+
+Components are tested by rendering to HTML strings with `react-dom/server` — no
+DOM environment, no testing library, no new dependency. That does not cover
+layout, so the pages were built, served and looked at across three viewports and
+both colour schemes. Two defects came out of that review and were fixed: an
+unassessed category's reason crushed into a narrow grid column on a phone, and
+"Passed / Info" printed beside seventeen passing checks, which buried the real
+problems.
+
+Six `<a href="/">` links were converted to `next/link`, and an unused import
+from the Phase 16 pipeline test was removed.
 
 New decisions are appended immediately above this section, using the form:
 

@@ -1,25 +1,70 @@
 /**
- * Placeholder landing page.
+ * The landing page.
  *
- * The real interface is built in Phase 17. This exists so that the application
- * boots and identifies itself correctly; it deliberately does not contain a URL
- * submission form, because URL validation is Phase 1.
+ * One control, and the plainest possible statement of what pressing it does.
+ * There is no feature grid and no marketing section: the product's argument is
+ * the report, and the fastest route to that argument is the input.
  */
+
+import { AnalyzeForm } from "./_components/analyze-form";
+import { Masthead, Shell } from "./_components/primitives";
+
+const CHECKS = [
+  ["Search", "titles, descriptions, headings, canonicals, robots, sitemaps"],
+  ["Security", "transport, headers, cookie attributes, what the server reveals"],
+  ["Content", "the headline, the pitch, calls to action, contact routes"],
+  ["Usability", "navigation weight, competing actions, heading structure"],
+] as const;
+
 export default function Home() {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center bg-zinc-50 px-6 font-sans dark:bg-black">
-      <main className="w-full max-w-xl">
-        <h1 className="text-3xl font-semibold tracking-tight text-black dark:text-zinc-50">
-          Website Roaster
-        </h1>
-        <p className="mt-3 text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-          Analyzes a single public web page and produces a structured, evidence-based
-          quality report.
-        </p>
-        <p className="mt-8 font-mono text-sm text-zinc-500 dark:text-zinc-500">
-          Phase 0 — repository foundation. The analysis pipeline is not built yet.
-        </p>
+    <>
+      <Masthead />
+
+      <main className="flex-1">
+        <Shell>
+          <div className="py-16 sm:py-24">
+            <h1 className="max-w-[20ch] text-4xl leading-[1.1] font-semibold tracking-tight sm:text-5xl">
+              Find out what your page is actually doing.
+            </h1>
+            <p className="mt-5 max-w-[58ch] text-lg leading-8 text-ink-muted">
+              Website Roaster reads one public page, records what it observes, and turns
+              that into a score you can trace back to the evidence. Then it makes fun of
+              the page a little.
+            </p>
+
+            <div className="mt-10 max-w-2xl">
+              <AnalyzeForm />
+            </div>
+          </div>
+
+          <div className="border-t border-rule py-10">
+            <h2 className="text-sm font-semibold">What gets checked</h2>
+            <dl className="mt-4 space-y-3">
+              {CHECKS.map(([name, detail]) => (
+                <div key={name} className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
+                  <dt className="w-28 shrink-0 text-sm font-medium">{name}</dt>
+                  <dd className="max-w-[62ch] text-sm text-ink-muted">{detail}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="mt-6 max-w-[62ch] text-sm text-ink-muted">
+              Performance, accessibility and mobile need a real browser. That pass is not
+              wired into the API yet, so those categories are reported as not assessed
+              rather than guessed at.
+            </p>
+          </div>
+        </Shell>
       </main>
-    </div>
+
+      <footer className="border-t border-rule">
+        <Shell>
+          <p className="py-6 text-sm text-ink-muted">
+            Every number in a report comes from something observed on the page. Nothing is
+            estimated, and a check that could not run says so.
+          </p>
+        </Shell>
+      </footer>
+    </>
   );
 }

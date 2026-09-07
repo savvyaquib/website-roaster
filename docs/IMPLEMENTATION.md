@@ -822,6 +822,7 @@ Phase 13 — ✅ Complete
 Phase 14 — ✅ Complete
 Phase 15 — ✅ Complete
 Phase 16 — ✅ Complete
+Phase 17 — ✅ Complete
 ...
 ```
 
@@ -1661,6 +1662,59 @@ Known limitations: the stored report embeds findings more than once, because
 recommendations and roast lines hold finding references that serialize by value.
 Nothing expires, so the store grows until Phase 19. A deployment must point
 `ANALYSIS_STORE_DIR` at a mounted volume or lose every report on each build.
+
+
+---
+
+## Phase 17 — Complete
+
+Delivered:
+
+- `app/page.tsx` — the landing page. One control.
+- `app/a/[id]/page.tsx` — progress, then the report; a server component reading
+  the job store.
+- `app/_components/` — `analyze-form` and `progress` (client), `score-scale`,
+  `findings`, `narrative`, `primitives`.
+- `app/{error,not-found,loading}.tsx` and `app/a/[id]/not-found.tsx`.
+- `lib/ui/format.ts` — presentation logic, testable without a renderer.
+- New design tokens in `app/globals.css`; IBM Plex Sans and Mono replace the
+  framework's default pairing.
+
+The result page shows the overall score, category scores, top issues, strengths,
+evidence behind every finding, recommendations, the AI interpretation, the roast
+and a screenshots section.
+
+Rules worth knowing (ADR-058):
+
+- **the accent is the data.** No brand colour; the saturated hues are the grade
+  bands, plus a fourth for *unknown* because "not assessed" is a result.
+- **one scale, with the grade boundaries drawn on it**, read from `GRADE_BANDS`
+  so the marks cannot drift from the scoring engine.
+- **an unassessed category is hatched and reads `n/a`**, with its reason in
+  words. Never an empty bar, which would look like a zero.
+- **progress says only what is known.** No stepper: the API reports `queued` and
+  `running`, not stages.
+- **evidence is a native `<details>`** — keyboard and screen-reader support from
+  the platform, no library.
+- **absence is always stated.** Interpretation, roast and screenshots explain
+  themselves when empty.
+
+Validation: typecheck, lint, format check, 2029 tests (88 for this phase) and
+`next build` all pass. The pages were also built, served and reviewed at 1200px,
+at 390px and in dark mode, and the two defects that review found were fixed.
+
+Not delivered, deliberately:
+
+- **no screenshots to show.** The browser pass is not wired into the API
+  (ADR-057), so that section is an empty state naming the reason.
+- no authentication, billing or accounts — out of V1 scope (CLAUDE.md)
+- no sharing controls — Phase 18
+- no history or list of past analyses — Phase 19
+
+Known limitation: component tests assert rendered HTML, which covers wording,
+stated absences and accessible names, but not layout or interaction. Those were
+checked by looking, not by a test, and a regression in them would not fail the
+build.
 
 
 ---
