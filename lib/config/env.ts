@@ -18,10 +18,14 @@
 import path from "node:path";
 
 import { parseAiEnv, type AiConfig } from "@/lib/ai/config";
+import { DEFAULT_RETENTION_DAYS } from "@/lib/jobs/sqlite-store";
 
-/** Default location for job records. Under the working directory, so local
- * development needs no configuration. */
-const DEFAULT_STORE_DIR = path.join(process.cwd(), ".data", "jobs");
+/**
+ * Default location for the analysis database.
+ *
+ * Under the working directory, so local development needs no configuration.
+ */
+const DEFAULT_DB_PATH = path.join(process.cwd(), ".data", "analyses.db");
 
 export const NODE_ENVS = ["development", "test", "production"] as const;
 export type NodeEnv = (typeof NODE_ENVS)[number];
@@ -45,12 +49,19 @@ export interface ServerEnv {
   /** Non-fatal AI configuration problems, for logging at startup. */
   readonly aiWarnings: readonly string[];
   /**
-   * Where analysis job records are kept (ADR-031).
+   * The analysis database file (ADR-060).
    *
    * A deployment points this at a mounted volume; the default sits under the
    * working directory so local development needs no configuration.
    */
-  readonly analysisStoreDir: string;
+  readonly analysisDbPath: string;
+  /**
+   * Days an analysis is kept before a sweep removes it (ADR-060).
+   *
+   * Zero or below keeps everything, which is a deliberate choice a deployment
+   * can make rather than the default.
+   */
+  readonly analysisRetentionDays: number;
 }
 
 /** Raw environment source. Narrower than `process.env` so tests can supply one. */
@@ -110,7 +121,9 @@ export function parseServerEnv(source: EnvSource): ServerEnv {
     throw new EnvValidationError(issues);
   }
 
-  const storeDir = source.ANALYSIS_STORE_DIR?.trim();
+  const dbPath = source.ANALYSIS_DB_PATH?.trim();
+  const retentionRaw = source.ANALYSIS_RETENTION_DAYS?.trim();
+  const retentionDays = Number(retentionRaw);
 
   // Parsed after the throw above, and never contributing to it: an AI
   // misconfiguration disables AI rather than stopping the application
@@ -123,8 +136,16 @@ export function parseServerEnv(source: EnvSource): ServerEnv {
     logLevel,
     ai,
     aiWarnings: Object.freeze(aiWarnings),
-    analysisStoreDir:
-      storeDir === undefined || storeDir.length === 0 ? DEFAULT_STORE_DIR : storeDir,
+    analysisDbPath:
+      dbPath === undefined || dbPath.length === 0 ? DEFAULT_DB_PATH : dbPath,
+    // An unreadable value keeps the default rather than stopping the server:
+    // retention is housekeeping, and housekeeping must not gate startup.
+    analysisRetentionDays:
+      retentionRaw === undefined ||
+      retentionRaw.length === 0 ||
+      !Number.isInteger(retentionDays)
+        ? DEFAULT_RETENTION_DAYS
+        : retentionDays,
   });
 }
 

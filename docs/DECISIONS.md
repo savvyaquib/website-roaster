@@ -3267,6 +3267,131 @@ card about that site.
 
 ---
 
+# ADR-060 — SQLite, And Storing The Analysis Rather Than The Website
+
+## Status
+
+Accepted
+
+## Supersedes
+
+The storage mechanism chosen in ADR-057. The rest of ADR-057 — job ids, refused
+submissions as records, the API's shape — stands unchanged.
+
+## Context
+
+ADR-031 put the job store in Phase 16 and left the mechanism open; ADR-057 chose
+a directory of JSON files, on the grounds that every access was by primary key
+and nothing needed a query, and recorded that Phase 19 would be where that
+stopped being true. It also recorded a known limitation: a stored report held
+every finding three times, once in `findings` and again inside the
+recommendations and roast lines that reference it.
+
+Phase 19 adds history, retention and a requirement to store no unnecessary
+website data. All three want a database.
+
+## Decision
+
+### SQLite, through `node:sqlite`
+
+It ships with the runtime, so persistence still costs no dependency — which is
+what lets ADR-020's "simplest architecture that supports the current phase" hold
+while gaining migrations, transactions, cascading deletes and indexed reads.
+
+Tables are `STRICT`, so a bug that wrote a string into an integer column fails
+at the write rather than surfacing later as a wrong number. Foreign keys are on
+(they are off by default in SQLite), so deleting an analysis takes its findings
+and scores with it. WAL journaling, because every status transition is a write.
+
+### Migrations are forward-only and tracked in `user_version`
+
+Numbered from 1, applied in order, each in a transaction so a failure leaves the
+previous version intact. The database's own pragma records progress, so there is
+no migrations table to keep consistent with the thing it describes.
+
+Two rules the tests enforce:
+
+- **A shipped migration is never edited.** Change one and two databases at the
+  same version have different schemas, which is the single failure a migration
+  system exists to prevent.
+- **A database newer than the code is refused, not opened.** Older code cannot
+  know what a later migration did, and writing to it would corrupt data it does
+  not understand.
+
+Migration runs on open rather than as a separate command: this is one process
+with an embedded database, and a deployment that *could* start the server
+against an un-migrated file eventually would.
+
+### Writing decomposes; reading recomposes
+
+Findings and category scores get their own rows. **Recommendations and roast
+lines get no rows at all**, because both are pure functions of the findings and
+the score (Phases 13 and 15) — storing them would be storing the second, third
+and fourth copy of every finding.
+
+What a *model* wrote is stored, because it cannot be derived from anything:
+punchlines and interpretation prose, each against a finding id. Reading joins
+the prose back to the facts and rebuilds the whole `AnalysisReport`, so nothing
+above the store knows this happened.
+
+This is the Phase 14 and 15 design paying off. Because the application owns
+every fact and the model only ever supplied words, storage only has to keep the
+words. A test asserts a round-tripped report equals the one that went in, and
+another asserts the rebuilt recommendations equal freshly computed ones.
+
+### "No unnecessary website content" is not "no website content"
+
+The database holds no HTML, no response bodies, no serialised DOM, no
+screenshots and no whole-page text. A test asserts the schema has no column that
+could hold any of it, and another asserts the analyzed markup appears nowhere in
+a populated database.
+
+It *does* hold short evidence quotations — a headline, a call-to-action label, a
+header value — because those are the evidence. A finding saying a page has a
+headline is worthless without the headline, and the report displays it (ADR-008).
+The line is bulk: excerpts yes, documents no. A test pins that every stored
+evidence detail is an excerpt.
+
+Writing the first version of that test as "the page's text appears nowhere"
+failed, correctly, on the page's own `<h1>` — which is how the distinction got
+made explicit rather than assumed.
+
+### Retention: thirty days, swept opportunistically
+
+Phase 19 requires a policy, so there is one: an analysis is kept for 30 days.
+`ANALYSIS_RETENTION_DAYS` changes it, and 0 keeps everything — a deliberate
+choice a deployment can make rather than the default, because unbounded growth
+should be opted into.
+
+ADR-020 rules out a scheduler and this application has no cron, so the sweep
+rides along with writes, at most once an hour per process. An installation that
+stops being used stops growing, which is the only case a missed sweep affects.
+
+An unreadable `ANALYSIS_RETENTION_DAYS` keeps the default rather than stopping
+the server: retention is housekeeping, and housekeeping must not gate startup.
+
+### `@types/node` was upgraded to match the runtime
+
+`node:sqlite` arrived in Node 22.5 and the project declared `@types/node@^20`
+while running Node 24. That mismatch is what this phase surfaced, and the fix is
+to describe the runtime accurately rather than hand-write an ambient
+declaration that could drift from it.
+
+## Consequences
+
+- The file-per-job store is gone. `lib/jobs/file-store.ts` and its tests were
+  removed; `createMemoryJobStore` remains as the test double.
+- `ANALYSIS_STORE_DIR` is replaced by `ANALYSIS_DB_PATH`. A deployment carrying
+  the old variable falls back to the default path and loses its history.
+- One connection per process, opened on first use, kept for the process's life
+  (ADR-032). Concurrent writers across processes are not supported, and would
+  need WAL plus a busy timeout to be considered properly — Phase 20's territory.
+- Reading a report costs three queries and a recomputation instead of one file
+  read. For a report-sized record this is not measurable, and it is what removes
+  the triple-storage of findings.
+
+---
+
 # CHANGE LOG
 
 ## Initial version
@@ -3697,6 +3822,46 @@ the width and height passed in. Looking at the rendered output caught three
 things the passing tests did not: a long host wrapping and pushing the wordmark
 onto two lines, a rule left dangling beneath an empty category strip, and the
 site being the least prominent thing on a card about that site.
+
+## Phase 19 — Persistence, history and retention
+
+Added ADR-060, which supersedes ADR-057's *storage mechanism* while leaving the
+rest of ADR-057 standing.
+
+It records the move from a directory of JSON files to SQLite through
+`node:sqlite` — still no dependency, now with migrations, transactions,
+cascading deletes and indexed reads; that tables are `STRICT` and foreign keys
+are switched on, since both are off by default and both turn a silent wrong
+value into a failed write; and that migrations are forward-only, tracked in
+`user_version`, applied in a transaction, never edited once shipped, and refused
+outright when the database is newer than the code.
+
+It records the storage shape: findings and category scores get rows,
+**recommendations and roast lines get none**, because both are pure functions of
+the findings and the score, and storing them would keep the second, third and
+fourth copy of every finding — the duplication ADR-057 recorded as a known
+limitation. What a model wrote is stored, because it cannot be derived; reading
+joins the prose back to the facts and rebuilds the whole report. That is the
+Phase 14 and 15 design paying off: the application owns every fact, so storage
+only has to keep the words.
+
+It records the distinction the phase brief forced: "no unnecessary website
+content" is not "no website content". The database holds no HTML, no bodies, no
+serialised DOM, no whole-page text — but it does hold short evidence
+quotations, because a finding that a page has a headline is worthless without
+the headline. The first version of that test asserted the page's text appeared
+nowhere and failed, correctly, on the page's own `<h1>`, which is how the line
+got drawn explicitly rather than assumed.
+
+It records a retention policy of thirty days, configurable, with zero meaning
+keep everything; the sweep rides along with writes at most hourly because
+ADR-020 rules out a scheduler; and an unreadable retention value keeps the
+default rather than stopping the server, since housekeeping must not gate
+startup.
+
+`@types/node` was upgraded from ^20 to 24 to match the Node 24 runtime the
+project already required. `node:sqlite` arrived in Node 22.5, so the declared
+types predated an API the runtime has had for two majors.
 
 New decisions are appended immediately above this section, using the form:
 

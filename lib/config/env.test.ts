@@ -20,7 +20,10 @@ const NO_AI = { ai: parseAiEnv({}), aiWarnings: [] };
  * Derived the same way env.ts derives it, so this stays an assertion about the
  * default rather than a copy of a path that would differ per machine.
  */
-const DEFAULT_STORE = { analysisStoreDir: path.join(process.cwd(), ".data", "jobs") };
+const DEFAULT_STORE = {
+  analysisDbPath: path.join(process.cwd(), ".data", "analyses.db"),
+  analysisRetentionDays: 30,
+};
 
 describe("parseServerEnv", () => {
   it("applies documented defaults when nothing is set", () => {
@@ -95,22 +98,50 @@ describe("parseServerEnv", () => {
   });
 });
 
-describe("the job store directory", () => {
+describe("the analysis database", () => {
   it("defaults under the working directory", () => {
-    expect(parseServerEnv({}).analysisStoreDir).toBe(
-      path.join(process.cwd(), ".data", "jobs"),
+    expect(parseServerEnv({}).analysisDbPath).toBe(
+      path.join(process.cwd(), ".data", "analyses.db"),
     );
   });
 
-  it("reads ANALYSIS_STORE_DIR when set", () => {
-    expect(parseServerEnv({ ANALYSIS_STORE_DIR: "/var/roaster" }).analysisStoreDir).toBe(
-      "/var/roaster",
+  it("reads ANALYSIS_DB_PATH when set", () => {
+    expect(parseServerEnv({ ANALYSIS_DB_PATH: "/var/roaster.db" }).analysisDbPath).toBe(
+      "/var/roaster.db",
     );
   });
 
   it("treats an empty value as unset", () => {
-    expect(parseServerEnv({ ANALYSIS_STORE_DIR: "   " }).analysisStoreDir).toBe(
-      path.join(process.cwd(), ".data", "jobs"),
+    expect(parseServerEnv({ ANALYSIS_DB_PATH: "   " }).analysisDbPath).toBe(
+      path.join(process.cwd(), ".data", "analyses.db"),
     );
   });
+});
+
+describe("the retention window", () => {
+  it("defaults to thirty days", () => {
+    expect(parseServerEnv({}).analysisRetentionDays).toBe(30);
+  });
+
+  it("reads ANALYSIS_RETENTION_DAYS when set", () => {
+    expect(parseServerEnv({ ANALYSIS_RETENTION_DAYS: "7" }).analysisRetentionDays).toBe(
+      7,
+    );
+  });
+
+  it("accepts zero, which keeps everything", () => {
+    expect(parseServerEnv({ ANALYSIS_RETENTION_DAYS: "0" }).analysisRetentionDays).toBe(
+      0,
+    );
+  });
+
+  it.each(["banana", "7.5", "", "   "])(
+    "keeps the default for %s rather than stopping the server",
+    (raw) => {
+      // Retention is housekeeping. Housekeeping must not gate startup.
+      expect(parseServerEnv({ ANALYSIS_RETENTION_DAYS: raw }).analysisRetentionDays).toBe(
+        30,
+      );
+    },
+  );
 });

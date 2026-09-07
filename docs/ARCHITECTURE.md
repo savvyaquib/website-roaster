@@ -123,7 +123,8 @@ lib/recommendations/    Ranked, actionable findings (Phase 13)
 lib/ai/                 Provider abstraction (Phase 14)
 lib/ai/interpretation/  Evidence assembly, prompt, and answer verification
 lib/roast/              Roast engine and its written fallback (Phase 15)
-lib/jobs/               The analysis job store (Phase 16)
+lib/db/                 Schema and migrations (Phase 19)
+lib/jobs/               The analysis job store (Phases 16, 19)
 lib/pipeline/           Analyzer orchestration (Phase 16)
 lib/api/                The analysis API, without HTTP (Phase 16)
 lib/ai/providers/       Vendor adapters. Imported only by resolve-provider.ts
@@ -164,6 +165,7 @@ See ADR-027.
 | `lib/ai` | Interpretation of supplied evidence | Produce measurements or scores |
 | `lib/ai/providers` | Speaking one vendor’s API | Be imported outside `lib/ai` |
 | `lib/roast` | Jokes about real findings | Affect the score, or pick its own subject |
+| `lib/db` | Schema, migrations, connection | Know what an analysis is |
 | `lib/jobs` | Job state that outlives a request | Know anything about HTTP |
 | `lib/pipeline` | Running the analyzers in order | Accept an unvalidated URL |
 | `lib/api` | Request in, response out | Import React, or know about Next.js |

@@ -7,11 +7,11 @@
 export { createJobId, isJobId } from "./id";
 
 export {
-  createFileJobStore,
-  DEFAULT_STORE_DIR,
-  JobStoreError,
-  type FileJobStoreOptions,
-} from "./file-store";
+  createSqliteJobStore,
+  DEFAULT_RETENTION_DAYS,
+  type SqliteJobStore,
+  type SqliteJobStoreOptions,
+} from "./sqlite-store";
 
 export { createMemoryJobStore, type MemoryJobStore } from "./memory-store";
 

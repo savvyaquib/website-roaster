@@ -1,33 +1,46 @@
 /**
  * The process's job store.
  *
- * Source of truth: ADR-031, ADR-057.
+ * Source of truth: ADR-031, ADR-057, ADR-060.
  *
- * One instance, created on first use. The directory comes from
- * `ANALYSIS_STORE_DIR` when set, so a deployment can put it on a mounted
- * volume rather than inside the build output.
+ * One database connection and one store, created on first use. ADR-032 puts
+ * this on a long-running Node server, so both are opened once and kept.
  */
 
 import { getServerEnv } from "@/lib/config/env";
+import { openDatabase } from "@/lib/db";
+import { createLogger } from "@/lib/observability/logger";
 
-import { createFileJobStore } from "./file-store";
-import type { JobStore } from "./types";
+import { createSqliteJobStore } from "./sqlite-store";
+import type { SqliteJobStore } from "./sqlite-store";
 
-let store: JobStore | undefined;
+let store: SqliteJobStore | undefined;
 
 /**
  * The job store for this process.
  *
- * Always the file-backed one. The in-memory store is a test double and is never
- * returned here — a store that loses everything on restart is the exact failure
- * ADR-031 was written to prevent.
+ * Always the database-backed one. The in-memory store is a test double and is
+ * never returned here — a store that loses everything on restart is the exact
+ * failure ADR-031 was written to prevent.
  */
-export function getJobStore(): JobStore {
-  store ??= createFileJobStore({ directory: getServerEnv().analysisStoreDir });
+export function getJobStore(): SqliteJobStore {
+  if (store === undefined) {
+    const env = getServerEnv();
+    const { db, migration } = openDatabase({ location: env.analysisDbPath });
+
+    createLogger("db").info("db.opened", {
+      from: migration.from,
+      to: migration.to,
+      applied: migration.applied.length,
+    });
+
+    store = createSqliteJobStore({ db, retentionDays: env.analysisRetentionDays });
+  }
+
   return store;
 }
 
-/** Test-only: drop the memoised store so a new directory takes effect. */
+/** Test-only: drop the memoised store so a new database path takes effect. */
 export function resetJobStore(): void {
   store = undefined;
 }

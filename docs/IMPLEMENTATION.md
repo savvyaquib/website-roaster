@@ -824,6 +824,7 @@ Phase 15 — ✅ Complete
 Phase 16 — ✅ Complete
 Phase 17 — ✅ Complete
 Phase 18 — ✅ Complete
+Phase 19 — ✅ Complete
 ...
 ```
 
@@ -1765,6 +1766,57 @@ Not delivered, deliberately:
 
 Known limitation: the card's typeface differs from the app's, which is visible
 if the two are seen side by side.
+
+
+---
+
+## Phase 19 — Complete
+
+Delivered:
+
+- `lib/db/migrations.ts` — the schema, forward-only, tracked in `user_version`.
+- `lib/db/database.ts` — open, set pragmas, migrate.
+- `lib/jobs/sqlite-store.ts` — the store, replacing the file-per-job one.
+- `ANALYSIS_DB_PATH` and `ANALYSIS_RETENTION_DAYS` in `lib/config/env.ts` and
+  `.env.example`.
+- Removed: `lib/jobs/file-store.ts` and its tests, and `ANALYSIS_STORE_DIR`.
+
+Stored: the analysis record, timestamps, status, normalized findings with their
+evidence, category scores with their deductions and metric contributions, the
+overall score and its weighting, the scoring version, the assessed and
+unassessed category lists, and the AI result.
+
+Rules worth knowing (ADR-060):
+
+- **migrations are forward-only and never edited once shipped**, and a database
+  newer than the code is refused rather than opened.
+- **recommendations and roast lines have no tables.** Both are pure over the
+  findings and the score, so they are rebuilt on read. Only what a model wrote
+  is stored, keyed by finding id.
+- **no bulk website content.** No HTML, no bodies, no DOM, no page text. Short
+  evidence quotations *are* kept, because they are the evidence.
+- **thirty-day retention**, configurable, 0 keeps everything. Swept on write, at
+  most hourly, because ADR-020 rules out a scheduler.
+- tables are `STRICT` and foreign keys are on, so a wrong type or an orphaned
+  finding fails at the write.
+
+Validation: typecheck, lint, format check, 2098 tests (57 for this phase) and
+`next build` all pass. Tests run against real in-memory and on-disk databases,
+including a round trip asserting a stored report equals the one that went in and
+that rebuilt recommendations equal freshly computed ones. Verified end to end
+against the running server: a real analysis of example.com stored 38 findings
+and 7 category scores, read back complete with its roast and 22 recommendations.
+
+Not delivered, deliberately:
+
+- no history UI. The store lists recent analyses; nothing renders it.
+- no cross-process write concurrency. One connection per process (ADR-032);
+  multiple writers would need a busy timeout and thought — Phase 20.
+- no export or backup command.
+
+Known limitation: `ANALYSIS_STORE_DIR` is gone. A deployment still setting it
+falls back to the default database path and does not carry its old records
+across — those were JSON files with no migration path into the new schema.
 
 
 ---
