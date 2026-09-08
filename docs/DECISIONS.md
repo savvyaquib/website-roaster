@@ -1128,7 +1128,11 @@ Deliberately *not* applied:
 - **the trailing slash of a path is preserved.** `/a` and `/a/` may serve
   different content.
 
-## Schemeless input is refused, not repaired
+## Schemeless input is refused, not repaired — **superseded by ADR-062**
+
+> This section no longer describes the code. A missing scheme is now inferred as
+> `https://`, and `missing_scheme` has been removed. The reasoning below is kept
+> because it is what was overturned, and why.
 
 Input such as `example.com` is refused with the dedicated code
 `missing_scheme`, rather than being silently upgraded to `https://example.com`.
@@ -3606,6 +3610,100 @@ frees its slot on failure.
 
 ---
 
+# ADR-062 — A Missing Scheme Is Inferred
+
+## Status
+
+Accepted
+
+## Amends
+
+ADR-038 (URL Normalization Rules), section "Schemeless input is refused, not
+repaired".
+
+## Context
+
+ADR-038 decided that `example.com` would be refused with a dedicated
+`missing_scheme` code rather than upgraded, on the grounds that guessing between
+`http://` and `https://` decides on the user's behalf which of two origins to
+contact, and that the code existed so the UI could offer a "did you mean" step.
+
+That affordance was never built, and the phase that could have built it shipped
+the interface without one. What a user typing `onyxsavvy.com` actually got was a
+red error telling them to add a protocol — a demand for punctuation, in exchange
+for nothing.
+
+## Decision
+
+A submission with no scheme is analyzed as `https://`.
+
+`example.com`, `example.com/pricing`, `//example.com` and `www.example.com` all
+become the URL a person meant. A written scheme is never altered, so
+`http://example.com` stays on http and the security analyzer still reports it as
+plaintext.
+
+### The scheme is detected in the text, before any parsing
+
+Whether a scheme was written is a question about the string, answered by
+matching a leading `scheme:` and not by seeing whether the parser copes.
+
+The first version of this change prefixed anything the parser refused, which
+turned a mistyped `https://exa mple.com` into `https://https://exa mple.com` and
+reported it as a bad *hostname* rather than a bad URL. An existing test caught
+it. Parsing failure is not evidence that a scheme is absent.
+
+### One rewrite beyond that: dotted scheme names
+
+`example.com:8080` is legal as a scheme named `example.com`, because a scheme
+name may contain dots. Nobody means that; they mean a host and a port. Only
+dotted scheme names are rewritten, which is why `javascript:`, `mailto:`,
+`data:` and `file:` are untouched and still refused for their protocol.
+
+`user:password@example.com` is the case this does not reach — `user` is
+scheme-shaped and undotted, so it is refused as an unsupported protocol rather
+than for its credentials. It is refused either way; only the message is less
+apt, and widening the rewrite to catch it would mean guessing at more inputs
+inside the function that decides what is safe to fetch.
+
+### Nothing is weakened, and several messages improve
+
+The inferred URL goes through every existing check, in the same order. What
+changes is that inputs which used to stop at a syntax error now reach the checks
+that have something to say about them:
+
+| Input | Before | After |
+| --- | --- | --- |
+| `example.com` | `missing_scheme` | analyzed |
+| `localhost` | `missing_scheme` | `loopback` |
+| `127.0.0.1` | `missing_scheme` | `loopback` |
+| `169.254.169.254` | `missing_scheme` | `metadata_endpoint` |
+| `10.0.0.1` | `missing_scheme` | `private_network` |
+| `printer.local` | `missing_scheme` | `internal_hostname` |
+| `example.com:8080` | `unsupported_protocol` | `disallowed_port` |
+| `javascript:alert(1)` | `unsupported_protocol` | unchanged |
+
+Refusing `localhost` for being loopback is a better answer to the question the
+user asked than refusing it for lacking punctuation.
+
+### `missing_scheme` is removed
+
+Nothing can return it any more, and leaving it in the union would advertise a
+reason through the API's structured error that can never occur.
+
+## Consequences
+
+- `UrlRejectionCode` lost a member. An API client branching on
+  `error.details.reason` will simply never see it again.
+- A site served only over plaintext, submitted without a scheme, is analyzed as
+  https and fails if the certificate does not answer. The user can still type
+  `http://` explicitly, and the error names the TLS problem. Automatically
+  retrying over http was rejected: silently downgrading to plaintext is not a
+  choice this application should make for someone.
+- The landing page placeholder is now `example.com`, and the copy for a refused
+  URL names an example rather than stating a requirement.
+
+---
+
 # CHANGE LOG
 
 ## Initial version
@@ -4105,6 +4203,34 @@ deployment to soak.
 
 The concurrency limit gives `queued` its meaning. ADR-011 has carried that state
 since Phase 0 and it lasted microseconds, because nothing ever waited.
+
+## Post-launch — a missing scheme is inferred
+
+Added ADR-062, which amends ADR-038.
+
+ADR-038 decided that `example.com` would be refused with a dedicated
+`missing_scheme` code, so the interface could offer a "did you mean
+https://example.com?" step. That step was never built, so what a user typing a
+bare domain actually got was a red error demanding punctuation in exchange for
+nothing.
+
+A submission with no scheme is now analyzed as `https://`. A written scheme is
+never altered, so `http://example.com` stays plaintext and the security analyzer
+still says so.
+
+The scheme is detected in the text rather than by seeing whether the parser
+copes. The first version of the change prefixed anything that failed to parse,
+which turned a mistyped `https://exa mple.com` into `https://https://exa
+mple.com` and reported it as a bad hostname rather than a bad URL — caught by an
+existing test. Parsing failure is not evidence that a scheme is absent.
+
+Nothing is weakened: the inferred URL goes through every existing check in the
+same order. Several messages improve, because inputs that used to stop at a
+syntax error now reach the checks that have something to say about them —
+`localhost` is refused as loopback, `169.254.169.254` as a metadata endpoint,
+`example.com:8080` for its port. `missing_scheme` is removed, since nothing can
+return it any more and leaving it would advertise an impossible reason through
+the API.
 
 New decisions are appended immediately above this section, using the form:
 

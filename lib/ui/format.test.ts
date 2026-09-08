@@ -128,7 +128,12 @@ describe("status copy", () => {
   });
 
   it("tells a person what to do about a URL they can fix", () => {
-    expect(statusCopy("invalid_url").detail).toContain("http");
+    const detail = statusCopy("invalid_url").detail;
+
+    // Naming an example beats naming a requirement, now that the scheme is
+    // inferred rather than demanded.
+    expect(detail).toContain("example.com");
+    expect(detail).toContain("optional");
   });
 
   it("explains a refusal without blaming the user", () => {

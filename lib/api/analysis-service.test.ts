@@ -291,7 +291,6 @@ describe("URL validation cannot be bypassed", () => {
     "javascript:alert(1)",
     "ftp://example.com/",
     "not a url",
-    "example.com",
     "",
   ])("refuses %s as invalid, and never runs it", async (url) => {
     const spy = vi.fn();
@@ -324,6 +323,24 @@ describe("URL validation cannot be bypassed", () => {
 
     expect(calls).toHaveLength(1);
     expect(calls[0]).toEqual(["https://example.com/"]);
+  });
+
+  it("accepts a bare hostname and analyzes the https form of it", async () => {
+    // Typing example.com is what people do; the scheme is inferred and the
+    // runner still receives a fully validated, normalized URL.
+    const spy = vi.fn();
+    const { response, body } = await analyse("example.com", completed, spy);
+
+    expect(response.status).toBe(202);
+    expect(jobOf(body).url).toBe("https://example.com/");
+    expect(spy).toHaveBeenCalledWith("https://example.com/");
+  });
+
+  it("treats a bare hostname and its written form as the same analysis", async () => {
+    const bare = await analyse("example.com");
+    const written = await analyse("https://example.com");
+
+    expect(jobOf(bare.body).url).toBe(jobOf(written.body).url);
   });
 
   it("stores no URL at all for a refused submission", async () => {

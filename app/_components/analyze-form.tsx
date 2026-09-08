@@ -77,7 +77,7 @@ export function AnalyzeForm() {
           spellCheck={false}
           value={url}
           onChange={(event) => setUrl(event.target.value)}
-          placeholder="https://example.com"
+          placeholder="example.com"
           disabled={submitting}
           aria-invalid={error !== null}
           aria-describedby={error === null ? undefined : errorId}
@@ -96,7 +96,7 @@ export function AnalyzeForm() {
       <p role="status" aria-live="polite" className="mt-3 min-h-5 text-sm">
         {error === null ? (
           <span className="text-ink-muted">
-            Public pages only. Nothing is stored beyond the report itself.
+            Public pages only. The https:// is optional.
           </span>
         ) : (
           <span id={errorId} className="text-poor">

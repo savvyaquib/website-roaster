@@ -22,8 +22,6 @@ export const URL_REJECTION_CODES = [
   "too_long",
   /** Contains control characters or embedded whitespace. */
   "malformed",
-  /** Parses only once a scheme is added, e.g. `example.com`. */
-  "missing_scheme",
   /** A scheme other than http/https, e.g. `file:`, `javascript:`, `ftp:`. */
   "unsupported_protocol",
   /** No host component at all. */
@@ -63,7 +61,6 @@ const SYNTAX_REJECTION_CODES = [
   "empty",
   "too_long",
   "malformed",
-  "missing_scheme",
   "unsupported_protocol",
   "missing_hostname",
   "malformed_hostname",

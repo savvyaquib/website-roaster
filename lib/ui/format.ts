@@ -156,7 +156,8 @@ export function statusCopy(status: AnalysisStatus): {
     case "invalid_url":
       return {
         heading: "Not a usable URL",
-        detail: "Enter a public address beginning with http:// or https://.",
+        detail:
+          "Enter a public website address, for example example.com. The https:// is optional.",
       };
   }
 }

@@ -104,9 +104,7 @@ describe("malformed input", () => {
   it.each([
     ["an empty string", "", "empty"],
     ["whitespace only", "   ", "empty"],
-    ["a bare word", "notaurl", "missing_scheme"],
-    ["a bare hostname", "example.com", "missing_scheme"],
-    ["a protocol-relative URL", "//example.com", "missing_scheme"],
+    ["a bare word, which is a single-label host", "notaurl", "internal_hostname"],
     ["a scheme with no host", "https://", "malformed"],
     ["a space inside the host", "https://exa mple.com/", "malformed"],
     ["an empty label", "https://example..com/", "malformed_hostname"],
@@ -135,10 +133,13 @@ describe("malformed input", () => {
     expect(refuse("https://exam\rple.com/")).toBe("malformed");
   });
 
-  it("suggests adding a scheme rather than saying 'malformed'", () => {
-    const result = validateUrl("example.com");
-    expect(result).toMatchObject({ valid: false, code: "missing_scheme" });
-    if (!result.valid) expect(result.reason).toContain("https://");
+  it("infers https rather than refusing a bare hostname", () => {
+    // Typing example.com is what people do, and refusing it taught them
+    // nothing they wanted to know.
+    expect(validateUrl("example.com")).toEqual({
+      valid: true,
+      normalizedUrl: "https://example.com/",
+    });
   });
 });
 
@@ -158,7 +159,7 @@ describe("unsupported protocols", () => {
 
 describe("localhost and loopback", () => {
   it.each([
-    ["the bare word, which has no scheme", "localhost", "missing_scheme"],
+    ["the bare word, once https is inferred", "localhost", "loopback"],
     ["an explicit localhost URL", "http://localhost", "loopback"],
     ["localhost with a path", "http://localhost/admin", "loopback"],
     ["localhost with a trailing dot", "http://localhost./", "loopback"],
@@ -368,7 +369,7 @@ describe("result shape", () => {
 });
 
 describe("analysisStatusForRejection", () => {
-  it.each(["empty", "malformed", "missing_scheme", "unsupported_protocol"] as const)(
+  it.each(["empty", "malformed", "unsupported_protocol"] as const)(
     "maps %s to invalid_url",
     (code) => {
       expect(analysisStatusForRejection(code)).toBe("invalid_url");
@@ -407,5 +408,107 @@ describe("no network access", () => {
     expect(source).not.toContain("node:dns");
     expect(source).not.toContain("node:net");
     expect(source).not.toContain("node:http");
+  });
+});
+
+describe("a scheme is inferred when one was not typed", () => {
+  it.each([
+    ["a bare hostname", "example.com", "https://example.com/"],
+    ["a subdomain", "www.example.com", "https://www.example.com/"],
+    ["a hostname with a path", "example.com/pricing", "https://example.com/pricing"],
+    ["a hostname with a query", "example.com/a?b=c", "https://example.com/a?b=c"],
+    ["a protocol-relative URL", "//example.com", "https://example.com/"],
+    ["an uppercase hostname", "EXAMPLE.COM", "https://example.com/"],
+    ["a trailing-dot hostname", "example.com.", "https://example.com/"],
+    ["surrounding whitespace", "  example.com  ", "https://example.com/"],
+  ])("accepts %s", (_label, input, expected) => {
+    expect(validateUrl(input)).toEqual({ valid: true, normalizedUrl: expected });
+  });
+
+  it.each([
+    ["example.com", "https://example.com"],
+    ["example.com/pricing", "https://example.com/pricing"],
+    ["www.example.com", "https://www.example.com"],
+    ["example.com?utm=x", "https://example.com?utm=x"],
+  ])("normalizes %s exactly as the written form %s", (bare, written) => {
+    // The point of the change: one address, one analysis, however it was typed.
+    expect(validateUrl(bare)).toEqual(validateUrl(written));
+  });
+
+  it("leaves an explicit http URL on http", () => {
+    // Inference applies only when nothing was written. A site the user knows is
+    // plaintext stays plaintext, and the security analyzer reports it as such.
+    expect(validateUrl("http://example.com")).toEqual({
+      valid: true,
+      normalizedUrl: "http://example.com/",
+    });
+  });
+
+  it("assumes https rather than http when nothing was written", () => {
+    expect(validateUrl("example.com")).toMatchObject({
+      normalizedUrl: expect.stringContaining("https://"),
+    });
+  });
+});
+
+describe("inferring a scheme does not weaken anything", () => {
+  it.each([
+    ["javascript:alert(1)", "unsupported_protocol"],
+    ["JavaScript:alert(1)", "unsupported_protocol"],
+    ["file:///etc/passwd", "unsupported_protocol"],
+    ["mailto:someone@example.com", "unsupported_protocol"],
+    ["data:text/html,<h1>x</h1>", "unsupported_protocol"],
+    ["ftp://example.com/", "unsupported_protocol"],
+  ])("still refuses %s", (input, expected) => {
+    // A written scheme is never rewritten, so nothing that was refused for its
+    // protocol becomes acceptable by losing it.
+    expect(refuse(input)).toBe(expected);
+  });
+
+  it.each([
+    ["localhost", "loopback"],
+    ["127.0.0.1", "loopback"],
+    ["127.0.0.1/admin", "loopback"],
+    ["[::1]", "loopback"],
+    ["10.0.0.1", "private_network"],
+    ["192.168.1.1", "private_network"],
+    ["169.254.169.254", "metadata_endpoint"],
+    ["metadata.google.internal", "metadata_endpoint"],
+    ["169.254.1.1", "link_local"],
+    ["0.0.0.0", "unspecified_address"],
+    ["intranet", "internal_hostname"],
+    ["printer.local", "internal_hostname"],
+  ])("refuses the bare form of %s as %s", (input, expected) => {
+    // Every one of these now reaches the network checks instead of stopping at
+    // a syntax error, which is why the reasons got better rather than weaker.
+    expect(refuse(input)).toBe(expected);
+  });
+
+  it("still refuses a non-default port written without a scheme", () => {
+    expect(refuse("example.com:8080")).toBe("disallowed_port");
+  });
+
+  it("still refuses credentials written with a scheme", () => {
+    expect(refuse("https://user:password@example.com")).toBe("credentials_present");
+  });
+
+  it("refuses bare credentials, though for the wrong-looking reason", () => {
+    // "user:" is scheme-shaped and has no dot, so it is left alone and parses
+    // as a scheme. The input is refused either way; only the message is less
+    // apt than it could be. Widening the rewrite to catch it would mean
+    // guessing at more inputs inside the function that decides what is safe to
+    // fetch, which is not a trade worth making for a rare typo.
+    expect(refuse("user:password@example.com")).toBe("unsupported_protocol");
+  });
+
+  it("still refuses a control character", () => {
+    expect(refuse("exa\rmple.com")).toBe("malformed");
+  });
+
+  it("does not prefix a scheme onto something that already has one", () => {
+    // The bug this replaced: a mistyped https URL became
+    // https://https://... and was reported as a bad hostname.
+    expect(refuse("https://exa mple.com/")).toBe("malformed");
+    expect(refuse("https://")).toBe("malformed");
   });
 });

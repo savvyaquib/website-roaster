@@ -72,7 +72,6 @@ const REJECTION_REASONS: Readonly<Record<UrlRejectionCode, string>> = {
   empty: "Enter a website URL.",
   too_long: `That URL is longer than ${MAX_URL_LENGTH} characters.`,
   malformed: "That does not look like a valid URL.",
-  missing_scheme: "Include the protocol, for example https://example.com.",
   unsupported_protocol: "Only http:// and https:// URLs can be analyzed.",
   missing_hostname: "That URL does not include a website address.",
   malformed_hostname: "That website address is not valid.",
@@ -95,21 +94,41 @@ function reject(code: UrlRejectionCode): UrlValidationResult {
   return { valid: false, code, reason: REJECTION_REASONS[code] };
 }
 
-/**
- * Would this string parse if it had a scheme?
- *
- * Used only to turn the unhelpful "malformed" verdict into an actionable one
- * for the common case of someone typing `example.com`.
- */
-function looksLikeSchemelessUrl(input: string): boolean {
-  if (input.includes("://")) return false;
+/** The scheme assumed when someone types a bare hostname. */
+const INFERRED_SCHEME = "https://";
 
-  try {
-    const candidate = new URL(`https://${input}`);
-    return candidate.hostname.length > 0;
-  } catch {
-    return false;
-  }
+/** A scheme, as the URL standard spells one, at the very start of the input. */
+const LEADING_SCHEME = /^([a-z][a-z0-9+.-]*):/i;
+
+/**
+ * The string to validate, with a scheme added when one was clearly omitted.
+ *
+ * Typing `example.com` is what people do, and refusing it taught them nothing
+ * they wanted to know. Inferring `https://` costs no safety: the result goes
+ * through every check below exactly as a typed URL would, so `localhost`
+ * becomes `https://localhost` and is refused as loopback rather than as a
+ * syntax error — a better answer to the same question.
+ *
+ * ## The scheme is detected textually, not by parsing
+ *
+ * An earlier version prefixed anything the parser refused, which meant a
+ * mistyped `https://exa mple.com` became `https://https://exa mple.com` and was
+ * reported as a bad *hostname* instead of a bad URL. Whether a scheme was
+ * written is a question about the text, and it is answered before any parsing.
+ *
+ * ## Dotted schemes are the one rewrite
+ *
+ * `example.com:8080` is legal as a scheme named `example.com`, because a scheme
+ * name may contain dots. Nobody means that; they mean a host and a port. Only
+ * dotted scheme names are rewritten, so `javascript:`, `mailto:`, `data:` and
+ * `file:` are untouched and stay refused for their protocol.
+ */
+function withInferredScheme(input: string): string {
+  const scheme = LEADING_SCHEME.exec(input);
+
+  if (scheme === null) return `${INFERRED_SCHEME}${input}`;
+
+  return scheme[1]?.includes(".") === true ? `${INFERRED_SCHEME}${input}` : input;
 }
 
 /**
@@ -133,9 +152,9 @@ export function validateUrl(input: unknown): UrlValidationResult {
 
   let url: URL;
   try {
-    url = new URL(trimmed);
+    url = new URL(withInferredScheme(trimmed));
   } catch {
-    return reject(looksLikeSchemelessUrl(trimmed) ? "missing_scheme" : "malformed");
+    return reject("malformed");
   }
 
   if (!ALLOWED_PROTOCOLS.has(url.protocol)) return reject("unsupported_protocol");
