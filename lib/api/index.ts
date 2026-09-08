@@ -9,8 +9,20 @@ export {
   handleCreateAnalysis,
   handleGetAnalysis,
   MAX_BODY_BYTES,
+  resetRateLimit,
   type AnalysisApiDeps,
 } from "./analysis-service";
+
+export {
+  clientKey,
+  createRateLimiter,
+  DEFAULT_LIMIT,
+  DEFAULT_WINDOW_MS,
+  MAX_TRACKED_CLIENTS,
+  type RateLimiter,
+  type RateLimitOptions,
+  type RateLimitResult,
+} from "./rate-limit";
 
 export { toAnalysisJobDto, type AnalysisJobDto } from "./analysis-dto";
 

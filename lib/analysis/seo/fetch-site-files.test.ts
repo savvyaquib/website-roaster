@@ -38,11 +38,12 @@ async function withServer(
 }
 
 function localOptions() {
+  // Only the policy and the resolver. The timeout and the byte cap are no
+  // longer overridable from here, which is the point (ADR-061).
   return {
-    fetchOptions: {
+    fetchOverrides: {
       policy: localPolicy,
       lookup: createPinnedLookup(localPolicy),
-      timeoutMs: 5000,
     },
   };
 }

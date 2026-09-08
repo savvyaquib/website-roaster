@@ -825,7 +825,7 @@ Phase 16 — ✅ Complete
 Phase 17 — ✅ Complete
 Phase 18 — ✅ Complete
 Phase 19 — ✅ Complete
-...
+Phase 20 — ✅ Complete
 ```
 
 Update this section after each completed phase.
@@ -1817,6 +1817,67 @@ Not delivered, deliberately:
 Known limitation: `ANALYSIS_STORE_DIR` is gone. A deployment still setting it
 falls back to the default database path and does not carry its old records
 across — those were JSON files with no migration path into the new schema.
+
+
+---
+
+## Phase 20 — Complete
+
+A systematic review of the fourteen areas the phase names. Seven issues found
+and fixed, six recorded with risk, mitigation and future work. Full account in
+ADR-061.
+
+Delivered:
+
+- `lib/api/rate-limit.ts` — a fixed window per client, checked before the body
+  is read or a job is written.
+- `lib/pipeline/limiter.ts` — a concurrency cap with a bounded queue, which is
+  what finally makes `queued` mean something.
+- `lib/pipeline/hardening.test.ts` — the hostile-input suite: second-order SSRF,
+  deadlines, malicious markup, oversized responses, concurrency.
+- `TRUSTED_PROXY` in `lib/config/env.ts` and `.env.example`.
+
+Fixed:
+
+1. **`fetchSiteFiles` accepted a replacement security policy.** It spread the
+   caller's options after its own defaults, so any caller could raise the byte
+   cap, extend the timeout, or swap out the SSRF guard. Phase 6 recorded this
+   and did not fix it. The seam is now `policy` and `lookup` only, with the
+   budgets applied last.
+2. **A site could aim the analyzer at an internal address, untested.** A
+   sitemap declared in robots.txt is an attacker-controlled fetch target. The
+   defence was already right; nothing asserted it. Now covered.
+3. **The analysis timeout was not a deadline.** It was passed to each of three
+   sequential HTTP calls, so an analysis could run to three times its budget.
+   Now a real deadline plus a separate per-request cap.
+4. **No rate limiting existed.** Now 429 with `Retry-After`, before any work.
+   Reads are deliberately not limited — polling is the normal path.
+5. **Concurrency was unbounded.** N requests meant N simultaneous analyses.
+   Now capped, with a bounded queue and a refusal past its depth.
+6. **A rate limit of zero allowed one request through**, because a fresh window
+   never consulted the limit.
+7. **The prompt did not mark its evidence untrusted.** The block is now fenced
+   and labelled, with an instruction to report rather than obey anything inside
+   that addresses the model.
+
+Reviewed and sound: URL validation and redirect-hop pinning, the 5MB and 2048
+character caps, parse5 executing nothing, secret handling, `npm audit` at zero
+vulnerabilities, browser and limiter cleanup in `finally`, and log fields
+carrying no page content or secrets.
+
+Documented rather than fixed, each with risk, mitigation and future work:
+browser isolation, per-process rate limiting, the untrustworthy client address,
+prompt injection, cross-process database writes, and long-run memory behaviour.
+
+Validation: typecheck, lint, format check, 2158 tests (60 for this phase) and
+`next build` all pass. `npm audit` reports zero vulnerabilities in production
+and development.
+
+Not delivered, deliberately:
+
+- no soak test; it needs a deployment to soak
+- no shared rate-limit state; ADR-020 defers that until a second worker exists
+- no container isolation for the browser; a deployment change, not a code one
 
 
 ---

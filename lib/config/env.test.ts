@@ -23,6 +23,7 @@ const NO_AI = { ai: parseAiEnv({}), aiWarnings: [] };
 const DEFAULT_STORE = {
   analysisDbPath: path.join(process.cwd(), ".data", "analyses.db"),
   analysisRetentionDays: 30,
+  trustProxy: false,
 };
 
 describe("parseServerEnv", () => {
@@ -144,4 +145,20 @@ describe("the retention window", () => {
       );
     },
   );
+});
+
+describe("trusting a proxy", () => {
+  it("does not, by default", () => {
+    expect(parseServerEnv({}).trustProxy).toBe(false);
+  });
+
+  it.each(["1", "true", "TRUE"])("trusts on an explicit %s", (raw) => {
+    expect(parseServerEnv({ TRUSTED_PROXY: raw }).trustProxy).toBe(true);
+  });
+
+  it.each(["0", "false", "yes", "banana", ""])("does not trust on %s", (raw) => {
+    // Anything but an explicit opt-in leaves the header untrusted, which is
+    // the safe direction for a typo to fall.
+    expect(parseServerEnv({ TRUSTED_PROXY: raw }).trustProxy).toBe(false);
+  });
 });

@@ -3392,6 +3392,220 @@ declaration that could drift from it.
 
 ---
 
+# ADR-061 — The Hardening Review
+
+## Status
+
+Accepted
+
+## Context
+
+Phase 20 asks for a systematic review of fourteen areas before launch, with
+fixes where they are safely possible and a written account where they are not.
+This records what was found, what changed, and what is still true.
+
+## What was fixed
+
+### 1. The site-file fetch could be handed a different security policy
+
+`fetchSiteFiles` accepted the whole of `FetchPageOptions` and spread it **after**
+its own defaults, so any caller could raise the byte cap, extend the timeout, or
+replace the SSRF policy outright. Phase 6's review recorded this and did not fix
+it, because doing so changed a Phase 5 signature; Phase 16 then added a caller
+that passed options through.
+
+A guard a caller can swap out is not a guard. The option is now
+`fetchOverrides`, narrowed to `policy` and `lookup`, and the budgets are applied
+last so nothing can raise them. The type change found every caller.
+
+### 2. A site could aim the analyzer at an internal address, and nothing tested it
+
+robots.txt is fetched from the analyzed site and then believed about where its
+sitemap lives, which makes the second request's target attacker-controlled —
+textbook second-order SSRF. The defence was already correct, because the policy
+runs on every request rather than only the first, but **nothing tested it**, so
+the protection was accidental rather than asserted. It is now covered for
+metadata endpoints, loopback, private ranges and non-HTTP schemes.
+
+### 3. The analysis timeout was not a deadline
+
+`DEFAULT_ANALYSIS_TIMEOUT_MS` was passed straight to each HTTP call, and the
+pipeline makes three sequential calls — so an analysis could run to three times
+its own budget, and the site-file requests inherited the page's timeout instead
+of their smaller one. There is now a real deadline, a separate per-request cap,
+and the site files keep their own budget.
+
+### 4. There was no rate limiting at all
+
+An anonymous public endpoint that starts network work and writes a database row
+per request, including for refusals (ADR-057). Now a fixed window per client,
+checked **before the body is read or a job is written**, returning 429 with
+`Retry-After`. Reads are not limited: polling a running analysis is the normal
+path, and throttling it would break the UI it exists for.
+
+### 5. Concurrency was unbounded
+
+The API started every accepted analysis immediately and awaited none, so N
+simultaneous requests meant N simultaneous analyses. ADR-032 called this a real
+constraint and left it here. There is now a concurrency limit with a bounded
+queue.
+
+The queue is what `queued` always meant. ADR-011 has had that state since Phase
+0, and until now it lasted microseconds because nothing ever waited; an analysis
+beyond the cap now sits in it, and the API and UI already know how to show that.
+Past the queue depth the answer is a refusal rather than an unbounded backlog of
+work nobody is still waiting for.
+
+### 6. A rate limit of zero allowed one request
+
+Found by a test written to check the API refused a body it should not read. A
+fresh window returned `allowed` without consulting the limit, so the first
+request of every window went through however low the limit was set.
+
+### 7. The prompt did not tell the model its evidence was untrusted
+
+The evidence block quotes text from the analyzed page — a headline, a button
+label, a header value — and that page is written by whoever we were pointed at.
+The block is now fenced and labelled untrusted, with an explicit instruction
+that anything inside addressing the model is content to report rather than an
+instruction to obey.
+
+## What was reviewed and found sound
+
+- **URL validation.** Phase 1's rules, applied to the submitted URL and to every
+  redirect hop, with DNS pinning (ADR-041). The API stores the normalized URL
+  and hands the runner that, never the submitted string, and a test pins that
+  the runner is called with the URL and nothing else.
+- **Oversized pages.** A 5MB cap enforced while reading rather than after, a
+  2048-character URL cap, five redirects. Now tested with a response that would
+  take the heap if the cap did not hold.
+- **Malicious HTML.** parse5 builds a tree and executes nothing, so CLAUDE.md's
+  "never execute user-supplied JavaScript" holds structurally. Now tested with
+  5,000-deep nesting, 20,000 elements, a 200KB attribute, unclosed and
+  interleaved tags, invalid byte sequences, and a script that would spin forever
+  in a browser.
+- **Secret exposure.** The AI key travels in a header rather than a query string
+  (ADR-054), errors are redacted, `internal_error` carries one fixed sentence,
+  and the API DTO is a whitelist built field by field. Log fields across the
+  whole codebase are ids, codes, statuses, counts and URLs — no page content, no
+  secrets.
+- **Dependency security.** `npm audit` reports zero vulnerabilities, production
+  and development. Four runtime dependencies.
+- **Resource cleanup.** The browser session closes in a `finally`; the
+  concurrency limiter releases its slot in a `finally`, so a thrown analysis
+  cannot shrink the pool; neither limiter keeps a timer, so neither can hold the
+  process open.
+- **Logging.** Structured, level-filtered, one JSON line. Values are restricted
+  to primitives by the type, which is what stops an object graph — or a secret
+  inside one — being dumped by accident.
+
+## What is not fixed, and why
+
+### Browser isolation
+
+**Issue.** ADR-042 records that the browser request guard is not isolation: a
+page renders in a Chromium process that shares the host with the application.
+
+**Risk.** A Chromium sandbox escape would reach the application host. Low
+likelihood, high impact.
+
+**Mitigation now.** The browser analyzers are **not wired into the API**
+(ADR-057), so no attacker-supplied page is rendered by the running service
+today. When they are, the request guard blocks navigation to private addresses,
+and Playwright's own sandbox remains in place.
+
+**Future work.** Run the browser in its own container with no network route to
+anything private, and treat the rendering result as untrusted input crossing a
+boundary. That is a deployment change, not a code change, and it cannot be made
+honestly from inside this repository.
+
+### Rate limiting is per process and does not survive a restart
+
+**Issue.** The limiter is an in-memory map. Two workers each allow the full
+rate; a restart forgets every counter.
+
+**Risk.** A determined client can exceed the intended rate by hitting a second
+worker, if one exists.
+
+**Mitigation now.** ADR-032 specifies a single long-running server, so there is
+one process today. The concurrency limit bounds total work regardless of how
+many requests arrive, which is the backstop that actually protects the host.
+
+**Future work.** Shared state — the thing ADR-020 defers until a demonstrated
+constraint requires it. A second worker is that constraint, and adding one
+should come with this.
+
+### The client address cannot be trusted without a proxy
+
+**Issue.** `x-forwarded-for` is set by a proxy and spoofed by anyone when there
+is no proxy to strip it.
+
+**Risk.** Believing it unconditionally would let a client pick its own bucket
+and defeat the limit entirely.
+
+**Mitigation now.** It is ignored unless `TRUSTED_PROXY` is set, and without it
+every request shares one bucket. That throttles honest traffic rather than
+letting an attacker past, which is the right direction for the error to fall.
+
+**Future work.** Read the connection's remote address directly, which needs a
+server adapter Next's route handlers do not currently expose.
+
+### Prompt injection cannot be eliminated
+
+**Issue.** Page content reaches the model. A page can contain instructions.
+
+**Risk.** A model could be steered into writing something the page wanted said.
+
+**Mitigation now.** Three layers, and the strongest is structural. The answer
+shape has no field for a fact (ADR-055): a model can reference a finding id and
+write prose, and nothing else. Verification then refuses invented findings,
+invented measurements, security assurances and ranking promises. The prompt
+labels the evidence untrusted, which reduces how often the other two have to
+fire. The worst outcome is a discarded interpretation and a report without that
+section.
+
+**Future work.** Nothing available is a fix. Narrowing what page text enters the
+prompt at all would reduce the surface at the cost of the interpretation's
+usefulness, and is worth revisiting if discarded answers turn out to be common.
+
+### Cross-process database writes
+
+**Issue.** ADR-060 opens one SQLite connection per process and assumes one
+writer.
+
+**Risk.** A second process writing concurrently would meet `SQLITE_BUSY`.
+
+**Mitigation now.** One process (ADR-032), and WAL journaling already allows
+readers alongside a writer.
+
+**Future work.** A busy timeout and a considered retry policy, alongside the
+shared rate-limit state, if a second worker is ever added.
+
+### Memory under sustained load
+
+**Issue.** "Memory leak testing" is on the Phase 20 list. There is no long-run
+soak test here.
+
+**Risk.** A slow leak would surface only in production.
+
+**Mitigation now.** The obvious retainers are bounded by construction: the rate
+limiter evicts at a cap, the concurrency queue has a depth, the store holds no
+in-memory index, and neither limiter keeps a timer. Tests assert the limiter
+frees its slot on failure.
+
+**Future work.** A soak run against a real deployment, which needs a deployment.
+
+## Consequences
+
+- `TRUSTED_PROXY` is new, and off by default. A deployment behind a proxy that
+  does not set it will throttle all its clients as one.
+- Two analyses run at once by default. A busy installation will see `queued`
+  mean something for the first time.
+- The site-file fetch seam is narrower, which is a breaking change to a
+  signature only tests and the pipeline used.
+
+---
+
 # CHANGE LOG
 
 ## Initial version
@@ -3862,6 +4076,35 @@ startup.
 `@types/node` was upgraded from ^20 to 24 to match the Node 24 runtime the
 project already required. `node:sqlite` arrived in Node 22.5, so the declared
 types predated an API the runtime has had for two majors.
+
+## Phase 20 — Hardening
+
+Added ADR-061, the hardening review: what was found across the fourteen areas
+Phase 20 names, what changed, and what is still true.
+
+Seven fixes. The site-file fetch accepted a replacement SSRF policy and larger
+budgets from any caller, which Phase 6 recorded and did not fix; the seam is now
+policy and resolver only, with the budgets applied last. A sitemap declared in a
+site's own robots.txt is an attacker-controlled fetch target, and while the
+policy already refused it on every request, nothing asserted that, so the
+protection was accidental rather than tested. The analysis timeout was passed to
+each of three sequential HTTP calls rather than acting as a deadline, so an
+analysis could run to three times its own budget. There was no rate limiting at
+all on an endpoint that starts network work and writes a row per request.
+Concurrency was unbounded. A rate limit of zero let one request through. And the
+prompt did not tell the model that the page text in its evidence was untrusted.
+
+Six things are documented rather than fixed, each with risk, mitigation and
+future work: browser isolation, which is a deployment change and cannot be made
+honestly from inside the repository; per-process rate limiting, which ADR-020
+defers until a second worker exists to demonstrate the constraint; the client
+address, which cannot be trusted without a proxy in front; prompt injection,
+which is constrained by the answer shape and by verification but not eliminable;
+cross-process database writes; and long-run memory behaviour, which needs a
+deployment to soak.
+
+The concurrency limit gives `queued` its meaning. ADR-011 has carried that state
+since Phase 0 and it lasted microseconds, because nothing ever waited.
 
 New decisions are appended immediately above this section, using the form:
 

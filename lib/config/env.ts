@@ -62,6 +62,14 @@ export interface ServerEnv {
    * can make rather than the default.
    */
   readonly analysisRetentionDays: number;
+  /**
+   * Whether an x-forwarded-for header may be believed (ADR-061).
+   *
+   * Off by default. Nothing strips that header on a direct connection, so an
+   * unproxied deployment that trusted it would let any client choose its own
+   * rate-limit bucket.
+   */
+  readonly trustProxy: boolean;
 }
 
 /** Raw environment source. Narrower than `process.env` so tests can supply one. */
@@ -122,6 +130,7 @@ export function parseServerEnv(source: EnvSource): ServerEnv {
   }
 
   const dbPath = source.ANALYSIS_DB_PATH?.trim();
+  const trustProxyRaw = source.TRUSTED_PROXY?.trim().toLowerCase();
   const retentionRaw = source.ANALYSIS_RETENTION_DAYS?.trim();
   const retentionDays = Number(retentionRaw);
 
@@ -146,6 +155,9 @@ export function parseServerEnv(source: EnvSource): ServerEnv {
       !Number.isInteger(retentionDays)
         ? DEFAULT_RETENTION_DAYS
         : retentionDays,
+    // Only an explicit opt-in counts. Anything else, including a typo, leaves
+    // the header untrusted, which is the safe direction to fall (ADR-061).
+    trustProxy: trustProxyRaw === "1" || trustProxyRaw === "true",
   });
 }
 

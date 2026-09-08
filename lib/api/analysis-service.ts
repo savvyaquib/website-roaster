@@ -20,8 +20,8 @@ import type { Logger } from "@/lib/observability/logger";
 import { createJobId, getJobStore, isJobId } from "@/lib/jobs";
 import type { AnalysisJob, JobStore } from "@/lib/jobs";
 import { JOB_SCHEMA_VERSION } from "@/lib/jobs";
-import { runAnalysis } from "@/lib/pipeline";
-import type { AnalysisRunner } from "@/lib/pipeline";
+import { createConcurrencyLimiter, QueueFullError, runAnalysis } from "@/lib/pipeline";
+import type { AnalysisRunner, ConcurrencyLimiter } from "@/lib/pipeline";
 
 import { toAnalysisJobDto } from "./analysis-dto";
 import {
@@ -30,6 +30,8 @@ import {
   STATUS_FOR_CODE,
   type ApiErrorCode,
 } from "./errors";
+import { clientKey, createRateLimiter } from "./rate-limit";
+import type { RateLimiter } from "./rate-limit";
 
 /** Largest request body accepted. A URL does not need more than this. */
 export const MAX_BODY_BYTES = 4096;
@@ -37,9 +39,27 @@ export const MAX_BODY_BYTES = 4096;
 /** How much of a rejected submission is kept, for showing the user. */
 const MAX_SUBMITTED_URL_LENGTH = 500;
 
+/**
+ * Process-wide limits.
+ *
+ * Created once and shared by every request, which is the whole point: a limit
+ * with per-request state would not limit anything (ADR-061).
+ */
+const defaultRateLimiter = createRateLimiter();
+const defaultLimiter = createConcurrencyLimiter();
+
+/** Test-only: forget every counted request. */
+export function resetRateLimit(): void {
+  defaultRateLimiter.reset();
+}
+
 export interface AnalysisApiDeps {
   readonly store?: JobStore;
   readonly runner?: AnalysisRunner;
+  readonly rateLimiter?: RateLimiter;
+  readonly limiter?: ConcurrencyLimiter;
+  /** Whether `x-forwarded-for` may be believed. See `rate-limit.ts`. */
+  readonly trustProxy?: boolean;
   readonly logger?: Logger;
   readonly now?: () => Date;
   /**
@@ -162,6 +182,34 @@ export async function handleCreateAnalysis(
   const now = deps.now ?? (() => new Date());
 
   try {
+    // Before the body is read, before a job is written: a refused submission
+    // still costs a database row (ADR-057), so the cheapest possible check has
+    // to come first.
+    const rateLimiter = deps.rateLimiter ?? defaultRateLimiter;
+    const verdict = rateLimiter.check(clientKey(request, deps.trustProxy ?? false));
+
+    if (!verdict.allowed) {
+      log.warn("api.rate_limited", { retryAfter: verdict.retryAfterSeconds });
+
+      return new Response(
+        JSON.stringify(
+          apiError(
+            "rate_limited",
+            "Too many analyses started from here. Wait a moment and try again.",
+            { retryAfterSeconds: verdict.retryAfterSeconds },
+          ),
+        ),
+        {
+          status: STATUS_FOR_CODE.rate_limited,
+          headers: {
+            "content-type": "application/json; charset=utf-8",
+            "cache-control": "no-store",
+            "retry-after": String(verdict.retryAfterSeconds),
+          },
+        },
+      );
+    }
+
     const body = await readBody(request);
     if (!body.ok) return body.response;
 
@@ -257,12 +305,21 @@ async function executeJob(
   const log = deps.logger ?? createLogger("api.analyze");
   const run = deps.runner ?? runAnalysis;
   const now = deps.now ?? (() => new Date());
+  const limiter = deps.limiter ?? defaultLimiter;
 
   try {
-    await deps.store.update(id, { status: "running", startedAt: now().toISOString() });
+    // The job stays `queued` until a slot frees. ADR-011 has had that state
+    // since Phase 0; with a concurrency cap it finally means something, and
+    // the API and the UI already know how to show it (ADR-061).
+    const outcome = await limiter.run(async () => {
+      await deps.store.update(id, {
+        status: "running",
+        startedAt: now().toISOString(),
+      });
 
-    // The URL comes from the stored, validated record — never from a client.
-    const outcome = await run(url);
+      // The URL comes from the stored, validated record — never from a client.
+      return run(url);
+    });
 
     if (outcome.status === "completed") {
       await deps.store.update(id, {
@@ -283,6 +340,25 @@ async function executeJob(
     });
     log.info("api.analysis_ended", { id, status: outcome.status, code: outcome.code });
   } catch (cause) {
+    if (cause instanceof QueueFullError) {
+      log.warn("api.analysis_rejected_busy", { id });
+
+      await deps.store
+        .update(id, {
+          status: "failed",
+          finishedAt: now().toISOString(),
+          error: {
+            code: "busy",
+            message:
+              "The analyzer was too busy to start this analysis. Nothing about the page was measured.",
+          },
+          report: null,
+        })
+        .catch(() => undefined);
+
+      return;
+    }
+
     // The detail goes to the log. The client is told an analysis failed, which
     // is true and is all anybody outside this process needs to know.
     log.error("api.analysis_crashed", {

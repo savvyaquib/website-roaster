@@ -8,10 +8,11 @@
  * be testing the internet.
  */
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createMemoryJobStore } from "@/lib/jobs";
 import type { AnalysisJob, MemoryJobStore } from "@/lib/jobs";
+import { createConcurrencyLimiter } from "@/lib/pipeline";
 import type { AnalysisOutcome, AnalysisRunner } from "@/lib/pipeline";
 import { createLogger } from "@/lib/observability/logger";
 
@@ -19,7 +20,9 @@ import {
   handleCreateAnalysis,
   handleGetAnalysis,
   MAX_BODY_BYTES,
+  resetRateLimit,
 } from "./analysis-service";
+import { createRateLimiter } from "./rate-limit";
 
 const silent = createLogger("test", { level: "silent" });
 
@@ -113,6 +116,13 @@ async function analyse(
 function jobOf(body: Record<string, never>): AnalysisJob {
   return (body as unknown as { job: AnalysisJob }).job;
 }
+
+beforeEach(() => {
+  // The limiter is process-wide by design, so a suite that shares it would
+  // throttle itself after ten requests. Resetting keeps each test independent
+  // without weakening what production does.
+  resetRateLimit();
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -689,5 +699,175 @@ describe("responses expose nothing internal", () => {
 
     expect(serialised).not.toContain("at Object.");
     expect(serialised).not.toContain(process.cwd());
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Limits (Phase 20)
+// ---------------------------------------------------------------------------
+
+describe("rate limiting", () => {
+  function post(url: string) {
+    return new Request("http://localhost/api/analyze", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+  }
+
+  it("refuses a client that starts too many analyses", async () => {
+    const limiter = createRateLimiter({ limit: 2, windowMs: 60_000 });
+    const store = createMemoryJobStore();
+    const deps = {
+      store,
+      logger: silent,
+      runner: stubRunner(completed),
+      rateLimiter: limiter,
+    };
+
+    await handleCreateAnalysis(post("https://example.com"), deps);
+    await handleCreateAnalysis(post("https://example.com"), deps);
+    const third = await handleCreateAnalysis(post("https://example.com"), deps);
+
+    expect(third.status).toBe(429);
+    expect(((await third.json()) as { error: { code: string } }).error.code).toBe(
+      "rate_limited",
+    );
+  });
+
+  it("tells the client when to come back", async () => {
+    const limiter = createRateLimiter({ limit: 1, windowMs: 60_000 });
+    const deps = {
+      store: createMemoryJobStore(),
+      logger: silent,
+      runner: stubRunner(completed),
+      rateLimiter: limiter,
+    };
+
+    await handleCreateAnalysis(post("https://example.com"), deps);
+    const refused = await handleCreateAnalysis(post("https://example.com"), deps);
+
+    expect(refused.headers.get("retry-after")).toBe("60");
+  });
+
+  it("writes no job for a refused request", async () => {
+    // A refused submission still costs a row (ADR-057), so the limit has to
+    // come before the store is touched at all.
+    const limiter = createRateLimiter({ limit: 1, windowMs: 60_000 });
+    const store = createMemoryJobStore();
+    const deps = {
+      store,
+      logger: silent,
+      runner: stubRunner(completed),
+      rateLimiter: limiter,
+    };
+
+    await handleCreateAnalysis(post("https://example.com"), deps);
+    await handleCreateAnalysis(post("https://example.com"), deps);
+
+    expect(store.all()).toHaveLength(1);
+  });
+
+  it("does not read the body of a refused request", async () => {
+    const limiter = createRateLimiter({ limit: 0, windowMs: 60_000 });
+    const request = post("https://example.com");
+
+    const response = await handleCreateAnalysis(request, {
+      store: createMemoryJobStore(),
+      logger: silent,
+      runner: stubRunner(completed),
+      rateLimiter: limiter,
+    });
+
+    expect(response.status).toBe(429);
+    // Untouched: the cheapest check runs first.
+    expect(request.bodyUsed).toBe(false);
+  });
+
+  it("does not limit reads", async () => {
+    const limiter = createRateLimiter({ limit: 0, windowMs: 60_000 });
+    const store = createMemoryJobStore();
+
+    const response = await handleGetAnalysis("00000000-0000-4000-8000-000000000000", {
+      store,
+      logger: silent,
+      rateLimiter: limiter,
+    });
+
+    // Polling a running analysis is the normal path; throttling it would break
+    // the UI it exists for.
+    expect(response.status).toBe(404);
+  });
+});
+
+describe("concurrency", () => {
+  it("marks a job failed when the queue is full", async () => {
+    const limiter = createConcurrencyLimiter({ maxConcurrent: 1, maxQueued: 0 });
+    const store = createMemoryJobStore();
+    const started: Promise<void>[] = [];
+
+    const gate = new Promise<void>((resolve) => setTimeout(resolve, 40));
+
+    for (let index = 0; index < 3; index += 1) {
+      await handleCreateAnalysis(
+        new Request("http://localhost/api/analyze", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ url: "https://example.com" }),
+        }),
+        {
+          store,
+          logger: silent,
+          limiter,
+          runner: async () => {
+            await gate;
+            return completed;
+          },
+          onStarted: (execution) => started.push(execution),
+        },
+      );
+    }
+
+    await Promise.all(started);
+
+    const statuses = store.all().map((job) => job.status);
+
+    // One ran; the rest were refused rather than queued indefinitely.
+    expect(statuses.filter((status) => status === "completed")).toHaveLength(1);
+    expect(statuses.filter((status) => status === "failed")).toHaveLength(2);
+  });
+
+  it("explains a refusal without blaming the page", async () => {
+    const limiter = createConcurrencyLimiter({ maxConcurrent: 1, maxQueued: 0 });
+    const store = createMemoryJobStore();
+    const started: Promise<void>[] = [];
+    const gate = new Promise<void>((resolve) => setTimeout(resolve, 40));
+
+    for (let index = 0; index < 2; index += 1) {
+      await handleCreateAnalysis(
+        new Request("http://localhost/api/analyze", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ url: "https://example.com" }),
+        }),
+        {
+          store,
+          logger: silent,
+          limiter,
+          runner: async () => {
+            await gate;
+            return completed;
+          },
+          onStarted: (execution) => started.push(execution),
+        },
+      );
+    }
+
+    await Promise.all(started);
+
+    const refused = store.all().find((job) => job.status === "failed");
+
+    expect(refused?.error?.code).toBe("busy");
+    expect(refused?.error?.message).toContain("Nothing about the page was measured");
   });
 });

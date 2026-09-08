@@ -37,6 +37,10 @@ export const API_ERROR_CODES = [
   "blocked",
   /** No job with that id. Also returned for a malformed id — see below. */
   "not_found",
+  /** Too many requests from this client, too quickly. */
+  "rate_limited",
+  /** The analyzer is at capacity and its queue is full. */
+  "busy",
   /** Something failed that nobody planned for. */
   "internal_error",
 ] as const;
@@ -51,6 +55,8 @@ export const STATUS_FOR_CODE: Readonly<Record<ApiErrorCode, number>> = {
   invalid_url: 400,
   blocked: 403,
   not_found: 404,
+  rate_limited: 429,
+  busy: 503,
   internal_error: 500,
 };
 

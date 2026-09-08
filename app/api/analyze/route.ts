@@ -6,6 +6,7 @@
  */
 
 import { handleCreateAnalysis } from "@/lib/api";
+import { getServerEnv } from "@/lib/config/env";
 
 /**
  * A browser is required and job state is written to disk, so this route cannot
@@ -15,5 +16,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export function POST(request: Request): Promise<Response> {
-  return handleCreateAnalysis(request);
+  // Whether the client address can be believed is a deployment fact, so it is
+  // read here rather than guessed at in the service (ADR-061).
+  return handleCreateAnalysis(request, { trustProxy: getServerEnv().trustProxy });
 }

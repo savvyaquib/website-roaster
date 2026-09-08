@@ -42,8 +42,16 @@ const SITE_FILE_TIMEOUT_MS = 10_000;
 
 export interface FetchSiteFilesOptions {
   readonly logger?: Logger;
-  /** Passed through to the Phase 2 client, so tests can reach a local server. */
-  readonly fetchOptions?: FetchPageOptions;
+  /**
+   * The network policy to fetch under. **Test seam. Not for production use.**
+   *
+   * Narrowed from the whole of `FetchPageOptions` deliberately. It used to
+   * accept all of them and spread them *after* the defaults below, so any
+   * caller could raise the byte cap, extend the timeout, or replace the SSRF
+   * policy outright. A guard that a caller can swap out is not a guard, and
+   * Phase 6's review recorded the weakness without fixing it (ADR-061).
+   */
+  readonly fetchOverrides?: Pick<FetchPageOptions, "policy" | "lookup">;
 }
 
 /**
@@ -95,10 +103,13 @@ async function retrieve(
   log: Logger,
 ): Promise<SiteFileResult> {
   const result = await fetchPage(url, {
+    // The seam first, so the budgets below always win. A site file is a small
+    // text file fetched as a side effect of analyzing a page; no caller has a
+    // reason to spend the page's budget on one.
+    ...options.fetchOverrides,
     timeoutMs: SITE_FILE_TIMEOUT_MS,
     maxBytes: SITE_FILE_MAX_BYTES,
     downloadMediaTypes: SITE_FILE_MEDIA_TYPES,
-    ...options.fetchOptions,
   });
 
   if (!result.ok) {

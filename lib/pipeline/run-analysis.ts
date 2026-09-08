@@ -52,8 +52,22 @@ export const NOT_RUN_IN_THIS_PHASE: readonly string[] = [
   "mobile",
 ];
 
-/** Whole-analysis budget. Generous: a slow site is not a failed one. */
+/**
+ * Whole-analysis budget.
+ *
+ * A deadline, not a per-request timeout. It used to be passed straight to each
+ * HTTP call, so three sequential fetches could each take the full budget and an
+ * analysis could run to three times it (ADR-061).
+ */
 export const DEFAULT_ANALYSIS_TIMEOUT_MS = 60_000;
+
+/**
+ * Most any single request may take.
+ *
+ * Capped separately from the whole-analysis deadline so one slow response
+ * cannot consume the budget the rest of the pipeline still needs.
+ */
+export const MAX_REQUEST_TIMEOUT_MS = 20_000;
 
 export type AnalysisOutcome =
   | { readonly status: "completed"; readonly report: AnalysisReport }
@@ -104,11 +118,22 @@ export const runAnalysis: AnalysisRunner = async (url, options = {}) => {
   const startedAt = Date.now();
   const log = options.logger ?? createLogger("analysis.pipeline");
   const timeoutMs = options.timeoutMs ?? DEFAULT_ANALYSIS_TIMEOUT_MS;
+  const deadline = startedAt + timeoutMs;
+
+  /** What a step may still spend, never more than one request is allowed. */
+  const budget = (): number =>
+    Math.min(MAX_REQUEST_TIMEOUT_MS, Math.max(0, deadline - Date.now()));
+
+  const outOfTime = (): AnalysisOutcome => ({
+    status: "timeout",
+    code: "analysis_deadline",
+    message: `The analysis did not finish within ${timeoutMs}ms.`,
+  });
 
   log.info("analysis.started", { url });
 
   const fetched = await fetchPage(url, {
-    timeoutMs,
+    timeoutMs: budget(),
     logger: log,
     ...(options.httpPolicy === undefined ? {} : { policy: options.httpPolicy }),
   });
@@ -132,12 +157,16 @@ export const runAnalysis: AnalysisRunner = async (url, options = {}) => {
     };
   }
 
+  if (Date.now() >= deadline) {
+    log.warn("analysis.deadline_exceeded", { url, elapsedMs: Date.now() - startedAt });
+    return outOfTime();
+  }
+
   const findings = await collectFindings(
     response,
     response.body,
     url,
     log,
-    timeoutMs,
     options.httpPolicy,
   );
   const score = scoreAnalysis({ findings });
@@ -202,7 +231,6 @@ async function collectFindings(
   html: string,
   url: string,
   log: Logger,
-  timeoutMs: number,
   httpPolicy: HttpSecurityPolicy | undefined,
 ): Promise<Finding[]> {
   const findings: Finding[] = [];
@@ -210,10 +238,7 @@ async function collectFindings(
   const page = extractPageData(html, url);
   const siteFiles = await fetchSiteFiles(url, {
     logger: log,
-    fetchOptions: {
-      timeoutMs,
-      ...(httpPolicy === undefined ? {} : { policy: httpPolicy }),
-    },
+    ...(httpPolicy === undefined ? {} : { fetchOverrides: { policy: httpPolicy } }),
   });
 
   const analyzers: { name: string; run: () => Finding[] }[] = [
