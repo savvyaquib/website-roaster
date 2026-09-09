@@ -13,8 +13,8 @@ export default function Loading() {
         <p role="status" aria-live="polite" className="text-sm text-ink-muted">
           Loading
         </p>
-        <div className="mt-4 h-1 w-full max-w-md overflow-hidden rounded-[2px] bg-rule">
-          <div className="sweep h-full w-1/4 rounded-[2px] bg-ink" />
+        <div className="mt-4 h-1 w-full max-w-md overflow-hidden rounded-full bg-paper-deep">
+          <div className="sweep h-full w-1/4 rounded-full bg-ink" />
         </div>
       </div>
     </main>

@@ -39,7 +39,7 @@ export function ShareBar() {
       <button
         type="button"
         onClick={copy}
-        className="rounded-[3px] border border-rule-strong bg-surface px-4 py-2 text-sm font-medium hover:border-ink"
+        className="rounded-lg border border-rule-strong bg-surface px-4 py-2.5 text-sm font-medium shadow-sm transition-colors hover:border-ink"
       >
         {copied ? "Link copied" : "Copy link"}
       </button>

@@ -84,12 +84,12 @@ export function ProgressView({
         // reader announcing a new number five times a second is unusable.
         className="max-w-[62ch]"
       >
-        <h1 className="text-2xl font-semibold tracking-tight">{copy.heading}</h1>
-        <p className="mt-2 text-ink-muted">{copy.detail}</p>
+        <h1 className="display text-3xl sm:text-4xl">{copy.heading}</h1>
+        <p className="mt-3 leading-7 text-ink-muted">{copy.detail}</p>
       </div>
 
-      <div className="mt-8 h-1 w-full max-w-md overflow-hidden rounded-[2px] bg-rule">
-        <div className="sweep h-full w-1/4 rounded-[2px] bg-ink" />
+      <div className="mt-8 h-1 w-full max-w-md overflow-hidden rounded-full bg-paper-deep">
+        <div className="sweep h-full w-1/4 rounded-full bg-ink" />
       </div>
 
       {startedAt === null ? null : (

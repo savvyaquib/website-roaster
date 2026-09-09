@@ -3,51 +3,75 @@
 /**
  * Design tokens.
  *
- * The accent in this interface is the data. There is no brand colour: the only
- * saturated hues are the grade bands, so colour always means something measured.
- * `unknown` is one of them, because "not assessed" is a first-class result in
- * this product (ADR-021, ADR-036) rather than an absence to be styled away.
+ * ## There is still no brand colour
+ *
+ * The only saturated hues in this product are the grade bands, so colour always
+ * means something measured. What is new is that the grade *leads*: a report
+ * takes its accent from the score the page earned, through `--tone` and
+ * `--tone-soft`, which the tone classes below set. A page that scored badly
+ * looks different from one that scored well, because it is different.
+ *
+ * `unknown` is one of the bands, because "not assessed" is a first-class result
+ * here (ADR-021, ADR-036) rather than an absence to be styled away.
+ *
+ * ## The ground is warm, not blue
+ *
+ * The previous palette was a cool blue-grey, which is the default temperature of
+ * every developer tool and reads as nothing in particular. This one is warm: a
+ * near-black carrying a little violet, and a bone paper rather than a white one.
  */
 :root {
-  --paper: #edf0f2;
-  --surface: #ffffff;
-  --ink: #0f1720;
-  --ink-muted: #55616e;
-  --rule: #cfd7de;
-  --rule-strong: #adb9c4;
+  --paper: #f4f1ea;
+  --paper-deep: #e8e3d8;
+  --surface: #fffdf8;
+  --ink: #17131c;
+  --ink-muted: #6a6272;
+  --rule: #ded7ca;
+  --rule-strong: #b6ac9c;
 
-  --good: #1b6b47;
-  --fair: #7d5a10;
-  --poor: #9e2f26;
-  --unknown: #64707d;
+  --good: #1d6a48;
+  --fair: #855808;
+  --poor: #a32d22;
+  --unknown: #6a6272;
 
-  --good-track: #bfdccd;
-  --fair-track: #e6d6a8;
-  --poor-track: #e8c3bf;
+  /* Soft companions: washes and glows, never text. */
+  --good-soft: #cbe3d5;
+  --fair-soft: #ecdcb2;
+  --poor-soft: #edcac5;
+  --unknown-soft: #ded9e0;
+
+  --grain: 0.05;
+  --glow: 0.5;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: #0b1015;
-    --surface: #121a21;
-    --ink: #e4ebf1;
-    --ink-muted: #94a2af;
-    --rule: #23303b;
-    --rule-strong: #3a4a58;
+    --paper: #100d16;
+    --paper-deep: #0a0810;
+    --surface: #191522;
+    --ink: #f2eee7;
+    --ink-muted: #a49bad;
+    --rule: #292236;
+    --rule-strong: #453b57;
 
-    --good: #56c393;
-    --fair: #d6a93c;
-    --poor: #ec8175;
-    --unknown: #8492a0;
+    --good: #63d3a0;
+    --fair: #e0b449;
+    --poor: #f28c7e;
+    --unknown: #a49bad;
 
-    --good-track: #1c4436;
-    --fair-track: #453718;
-    --poor-track: #4a2723;
+    --good-soft: #1a4535;
+    --fair-soft: #443519;
+    --poor-soft: #4b2724;
+    --unknown-soft: #2c2536;
+
+    --grain: 0.08;
+    --glow: 0.85;
   }
 }
 
 @theme inline {
   --color-paper: var(--paper);
+  --color-paper-deep: var(--paper-deep);
   --color-surface: var(--surface);
   --color-ink: var(--ink);
   --color-ink-muted: var(--ink-muted);
@@ -57,28 +81,99 @@
   --color-fair: var(--fair);
   --color-poor: var(--poor);
   --color-unknown: var(--unknown);
-  --color-good-track: var(--good-track);
-  --color-fair-track: var(--fair-track);
-  --color-poor-track: var(--poor-track);
+  --color-good-soft: var(--good-soft);
+  --color-fair-soft: var(--fair-soft);
+  --color-poor-soft: var(--poor-soft);
+  --color-unknown-soft: var(--unknown-soft);
 
-  --font-sans: var(--font-plex-sans);
-  --font-mono: var(--font-plex-mono);
+  --font-sans: var(--font-poppins);
+  --font-display: var(--font-playfair);
+  --font-mono:
+    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
 
 body {
   background: var(--paper);
   color: var(--ink);
-  font-family: var(--font-sans), system-ui, sans-serif;
+  font-family: var(--font-poppins), system-ui, sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+}
+
+/**
+ * Playfair carries judgement, Poppins carries measurement.
+ *
+ * Every heading, the score, and the roast are set in the display face; every
+ * number that came off the page is set in the text face. A reader can tell what
+ * kind of statement they are looking at before reading a word of it.
+ */
+.display {
+  font-family: var(--font-playfair), Georgia, serif;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+}
+
+/**
+ * Paper grain.
+ *
+ * A single inline SVG turbulence, so there is no asset to fetch and nothing to
+ * go stale. It sits above the content at a few percent, which is enough to stop
+ * large flat areas reading as a screenshot of a wireframe.
+ */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  opacity: var(--grain);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/></filter><rect width='140' height='140' filter='url(%23n)' opacity='0.5'/></svg>");
 }
 
 /* Tabular figures everywhere a number can change, so nothing jitters. */
 .tabular {
   font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/**
+ * Tone classes.
+ *
+ * These do not paint anything themselves; they publish the grade colour to the
+ * subtree so a glow, a rule or a wash can pick it up without every component
+ * having to be handed a colour.
+ */
+.tone-good {
+  --tone: var(--good);
+  --tone-soft: var(--good-soft);
+}
+.tone-fair {
+  --tone: var(--fair);
+  --tone-soft: var(--fair-soft);
+}
+.tone-poor {
+  --tone: var(--poor);
+  --tone-soft: var(--poor-soft);
+}
+.tone-unknown {
+  --tone: var(--unknown);
+  --tone-soft: var(--unknown-soft);
+}
+
+/* The light behind the score. Its colour is the verdict. */
+.tone-glow {
+  background: radial-gradient(
+    62% 78% at 18% 42%,
+    color-mix(in oklab, var(--tone) 34%, transparent) 0%,
+    transparent 72%
+  );
+  opacity: var(--glow);
 }
 
 :focus-visible {
   outline: 2px solid var(--ink);
-  outline-offset: 2px;
+  outline-offset: 3px;
+  border-radius: 2px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -103,4 +198,12 @@ body {
 
 .sweep {
   animation: sweep 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* A disclosure marker that rotates, drawn in CSS rather than shipped as an icon. */
+.disclosure {
+  transition: transform 160ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+details[open] > summary .disclosure {
+  transform: rotate(90deg);
 }

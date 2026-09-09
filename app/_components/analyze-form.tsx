@@ -81,13 +81,13 @@ export function AnalyzeForm() {
           disabled={submitting}
           aria-invalid={error !== null}
           aria-describedby={error === null ? undefined : errorId}
-          className="min-w-0 flex-1 rounded-[3px] border border-rule-strong bg-surface px-4 py-3 font-mono text-base text-ink placeholder:text-ink-muted focus:border-ink disabled:opacity-60"
+          className="min-w-0 flex-1 rounded-lg border border-rule-strong bg-surface px-4 py-3.5 font-mono text-base text-ink shadow-sm transition-colors placeholder:text-ink-muted/70 focus:border-ink disabled:opacity-60"
         />
 
         <button
           type="submit"
           disabled={submitting}
-          className="shrink-0 rounded-[3px] bg-ink px-6 py-3 text-base font-medium text-paper hover:opacity-90 disabled:opacity-60"
+          className="shrink-0 rounded-lg bg-ink px-7 py-3.5 text-base font-medium text-paper transition-opacity hover:opacity-85 disabled:opacity-60"
         >
           {submitting ? "Starting" : "Analyze"}
         </button>

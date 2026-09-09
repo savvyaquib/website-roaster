@@ -11,14 +11,14 @@ import "./globals.css";
  * at a glance whether they are looking at a verdict or at a fact.
  */
 const playfair = Playfair_Display({
-  variable: "--font-display",
+  variable: "--font-playfair",
   subsets: ["latin"],
   style: ["normal", "italic"],
   weight: ["400", "500", "600", "700"],
 });
 
 const poppins = Poppins({
-  variable: "--font-sans",
+  variable: "--font-poppins",
   subsets: ["latin"],
   weight: ["300", "400", "500", "600"],
 });

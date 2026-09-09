@@ -178,3 +178,33 @@ export function hostOf(url: string): string {
     return url;
   }
 }
+
+/**
+ * Publishes the grade colour to a subtree as `--tone`.
+ *
+ * Nothing is painted by these classes directly. They let a glow or a wash take
+ * the colour of the verdict without every component being handed one, which is
+ * how a report ends up looking like its own score.
+ */
+export const TONE_CLASS: Readonly<Record<Tone, string>> = {
+  good: "tone-good",
+  fair: "tone-fair",
+  poor: "tone-poor",
+  unknown: "tone-unknown",
+};
+
+/** Washes: a tint of the grade, quiet enough to put text on. */
+export const SOFT_TONE: Readonly<Record<Tone, string>> = {
+  good: "bg-good-soft",
+  fair: "bg-fair-soft",
+  poor: "bg-poor-soft",
+  unknown: "bg-unknown-soft",
+};
+
+/** Rules and edges that carry the grade. */
+export const EDGE_TONE: Readonly<Record<Tone, string>> = {
+  good: "border-good",
+  fair: "border-fair",
+  poor: "border-poor",
+  unknown: "border-unknown",
+};

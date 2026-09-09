@@ -16,12 +16,12 @@
  *
  * ## One typeface
  *
- * The interface pairs Plex Sans with Plex Mono. Satori needs font *data*, not a
- * CSS family, and the only fonts on disk here are hashed woff2 build artifacts
- * that change every build. Rather than fetch a font over the network while
- * rendering a share image — a request that can fail and would make the card
- * non-deterministic — the card uses the renderer's built-in face and builds
- * hierarchy from size, weight and colour instead.
+ * The interface pairs Poppins with Playfair Display. Satori needs font *data*,
+ * not a CSS family, and the only fonts on disk here are hashed woff2 build
+ * artifacts that change every build. Rather than fetch a font over the network
+ * while rendering a share image — a request that can fail and would make the
+ * card non-deterministic — the card uses the renderer’s built-in face and
+ * builds hierarchy from size, weight and colour instead.
  *
  * ## What it leaves out
  *
@@ -40,14 +40,14 @@ export const CARD_HEIGHT = 630;
 
 /** The light-mode tokens from `app/globals.css`, as literals Satori can read. */
 const COLOR = {
-  paper: "#EDF0F2",
-  ink: "#0F1720",
-  inkMuted: "#55616E",
-  rule: "#CFD7DE",
-  good: "#1B6B47",
-  fair: "#7D5A10",
-  poor: "#9E2F26",
-  unknown: "#64707D",
+  paper: "#F4F1EA",
+  ink: "#17131C",
+  inkMuted: "#6A6272",
+  rule: "#DED7CA",
+  good: "#1D6A48",
+  fair: "#855808",
+  poor: "#A32D22",
+  unknown: "#6A6272",
 } as const;
 
 const TONE_COLOR: Readonly<Record<Tone, string>> = {

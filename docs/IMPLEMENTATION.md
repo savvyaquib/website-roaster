@@ -1679,8 +1679,8 @@ Delivered:
   `findings`, `narrative`, `primitives`.
 - `app/{error,not-found,loading}.tsx` and `app/a/[id]/not-found.tsx`.
 - `lib/ui/format.ts` — presentation logic, testable without a renderer.
-- New design tokens in `app/globals.css`; IBM Plex Sans and Mono replace the
-  framework's default pairing.
+- New design tokens in `app/globals.css`; the typeface pairing was later changed
+  by ADR-063.
 
 The result page shows the overall score, category scores, top issues, strengths,
 evidence behind every finding, recommendations, the AI interpretation, the roast
@@ -1879,6 +1879,64 @@ Not delivered, deliberately:
 - no shared rate-limit state; ADR-020 defers that until a second worker exists
 - no container isolation for the browser; a deployment change, not a code one
 
+
+---
+
+# POST-LAUNCH CHANGES
+
+Work after Phase 20, recorded here so the implementation history stays complete.
+Each entry names the ADR that carries the reasoning.
+
+## A missing scheme is inferred — ADR-062
+
+`example.com` is now analyzed as `https://example.com`. A written scheme is
+never altered, so `http://` stays plaintext and the security analyzer still
+reports it.
+
+ADR-038 had refused schemeless input with a dedicated `missing_scheme` code so
+the interface could offer a "did you mean" step. That step was never built, so
+a bare domain got a red error demanding punctuation in exchange for nothing.
+
+The scheme is detected in the text, not by seeing whether the parser copes: the
+first attempt prefixed anything that failed to parse, which turned a mistyped
+`https://exa mple.com` into `https://https://exa mple.com`. An existing test
+caught it. `missing_scheme` was removed from `UrlRejectionCode`, since nothing
+can return it any more.
+
+Files: `lib/analysis/url/validate-url.ts`, `lib/analysis/url/types.ts`,
+`lib/ui/format.ts`, `app/_components/analyze-form.tsx`.
+
+## Playfair and Poppins, and the score as the accent — ADR-063
+
+Requested change: Poppins for body, Playfair Display for headings, and an
+interface that does not read as generated.
+
+Playfair carries judgement — the score, the grade, every heading, the roast.
+Poppins carries measurement. Monospace shrank to strings a reader might copy
+literally: URLs, finding ids, header values. No mono family is loaded; the
+reserved cases use the platform stack.
+
+There is still no brand colour. The grade is published to the page as `--tone`
+and the wash behind the score numeral takes it, so a report is tinted by its own
+verdict. The ground moved from cool blue-grey to a warm near-black and a bone
+paper, with an inline SVG grain.
+
+Files: `app/layout.tsx`, `app/globals.css`, `lib/ui/format.ts`, every file in
+`app/_components/`, `app/page.tsx`, `app/a/[id]/page.tsx`, and the four
+error/loading pages.
+
+Validation: typecheck, lint, format check, 2193 tests and `next build` all pass.
+Verified by building, serving and screenshotting at 1280px and 390px in both
+colour schemes, which is what found the two defects the tests could not: the
+grade letter hung above the numeral's baseline, because a display face with a
+crushed line-height overflows its own line box and `items-end` aligns the box
+rather than the glyphs; and Poppins at weight 300 was too thin for small text on
+a dark ground.
+
+Known limitation: the share card still renders in the Satori runtime's built-in
+face, for ADR-059's reason — Satori needs font data and the only font files on
+disk are hashed build artifacts. Its palette was updated to match; its typeface
+cannot be without fetching a font mid-render.
 
 ---
 

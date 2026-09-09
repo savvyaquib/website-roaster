@@ -3122,7 +3122,7 @@ difference is usually the interesting part.
 Screenshots have their own entry: the browser pass is not wired into the API
 (ADR-057), so that section names the reason instead of leaving a gap.
 
-### Typography separates measurement from prose
+### Typography separates measurement from prose — **amended by ADR-063**
 
 Plex Mono carries measured values, finding identifiers and header strings —
 things a reader might copy or compare. Plex Sans carries prose. The roast is the
@@ -3196,7 +3196,7 @@ sync with the metadata by hand.
 
 No new dependency. `next/og` ships with the framework.
 
-### One typeface, and why
+### One typeface, and why — **amended by ADR-063**
 
 The interface pairs Plex Sans with Plex Mono. Satori needs font *data*, not a
 CSS family, and the only font files on disk are hashed woff2 build artifacts
@@ -3701,6 +3701,115 @@ reason through the API's structured error that can never occur.
   choice this application should make for someone.
 - The landing page placeholder is now `example.com`, and the copy for a refused
   URL names an example rather than stating a requirement.
+
+---
+
+# ADR-063 — Playfair And Poppins, And The Score As The Accent
+
+## Status
+
+Accepted
+
+## Amends
+
+ADR-058 (Phase 17), section "Typography separates measurement from prose", and
+ADR-059 (Phase 18), section "One typeface, and why".
+
+## Context
+
+The interface was set in IBM Plex Sans and Plex Mono on a cool blue-grey ground.
+Every element was near the same size and weight, every rule was the same
+hairline, and most text below the headings was muted grey. The user's words for
+the result were "so AI generic", and they were right: that combination is the
+default temperature of every developer tool, and it read as nothing in
+particular.
+
+They asked for Poppins, with Playfair Display for headings.
+
+## Decision
+
+### The two faces divide the page by what a statement *is*
+
+Playfair Display carries **judgement**: the score, the grade, every heading, the
+wordmark's second half, and the roast. Poppins carries **measurement**:
+evidence, labels, impact lines, and every number that came off the page.
+
+This is not decoration. A roast is a review, and a review is exactly the kind of
+document that sets its verdicts in a display face and its facts in a text face.
+A reader can tell which kind of statement they are looking at before reading a
+word of it — which is the same distinction ADR-009 makes between a measurement
+and an inference, carried into the type.
+
+The wordmark states the system in two words: "Website" in the measuring face,
+*Roaster* in the judging one. There is no logo, and the product does not need
+one.
+
+### Monospace is now for machine strings only
+
+ADR-058 gave Plex Mono every measured value, including small data labels. A
+monospace face used that broadly is one of the reliable signals that a page was
+generated rather than designed, and it was doing real damage here: an impact
+line and a URL were set identically despite being nothing alike.
+
+Mono is now reserved for strings a reader might copy or compare literally —
+URLs, finding identifiers, header values, job ids. Numbers moved to Poppins with
+tabular figures, or to Playfair where they are the point (the score, the four
+header statistics). No mono family is loaded: the reserved cases use the
+platform stack, which saves a download and looks correct on every system.
+
+### There is still no brand colour, but the grade now leads
+
+ADR-058's principle holds — the only saturated hues are the grade bands, so
+colour always means something measured. What is new is that the grade is
+published to the page as `--tone`, and the light behind the score numeral takes
+it. A report on a failing page is washed red; a passing one is washed green.
+
+The product's accent colour is the verdict. That is the strongest available
+answer to "give it something attractive" that does not require inventing a
+decorative hue with nothing behind it, and it extends the existing rule rather
+than breaking it.
+
+A saffron brand accent was tried on paper and rejected: it is a neighbour of the
+`fair` amber, and a control that looks like a warning is a control that lies.
+Every unused hue was either a grade's neighbour or the violet that every AI
+product already uses.
+
+### The ground is warm
+
+A near-black carrying a little violet (`#100D16`), and a bone paper (`#F4F1EA`)
+rather than a white one. Text is warm off-white rather than blue-white. A single
+inline SVG turbulence at four to eight percent gives the flat areas a grain, so
+they read as a surface rather than as an empty div.
+
+## Alternatives considered
+
+- **Keeping one face and changing only sizes.** Rejected: the brief named two
+  faces, and the size-only version had already been built and was the thing
+  being complained about.
+- **Playfair for body text.** Rejected: it is a high-contrast display face and
+  is unpleasant below about 18px, which is most of a report.
+- **A card-based layout.** Rejected on ADR-058's original grounds and on the
+  frontend-design guidance: identical rounded cards with identical shadows are
+  the other reliable signal of generated design. Structure still comes from
+  rules and space.
+
+## Consequences
+
+- Two Google font families are loaded where two were loaded before. Playfair is
+  requested in four weights and an italic because the wordmark and the roast
+  need the italic; Poppins in four.
+- Body weight is 400 rather than 300. Poppins 300 is too thin to hold small text
+  on a dark ground, which was visible in the first screenshots.
+- `TONE_CLASS`, `SOFT_TONE` and `EDGE_TONE` join `TEXT_TONE` and `TRACK_TONE` in
+  `lib/ui/format.ts`. The first publishes `--tone` to a subtree; the rest are
+  ordinary class maps.
+- The share card's literal hex table moved to the new light-mode values. It
+  still uses the renderer's built-in face, for the reason ADR-059 gives — Satori
+  needs font data, and the only files on disk are hashed build artifacts. The
+  card is now further from the app's typography than it was, and that is the
+  cost of not fetching a font while rendering an image.
+- The `.tabular` class now also sets `font-feature-settings: "tnum"`, because
+  Poppins needs asking.
 
 ---
 
@@ -4232,6 +4341,40 @@ syntax error now reach the checks that have something to say about them —
 return it any more and leaving it would advertise an impossible reason through
 the API.
 
+## Post-launch — Playfair and Poppins, and the score as the accent
+
+Added ADR-063, which amends ADR-058 and ADR-059.
+
+The interface was set in IBM Plex on a cool blue-grey ground, at one size and
+one weight, with a hairline under everything. The user's word for the result was
+"generic", and it was: that is the default temperature of every developer tool.
+
+Playfair Display now carries judgement — the score, the grade, every heading,
+the roast — and Poppins carries measurement. The division is the same one
+ADR-009 already makes between a measurement and an inference, moved into the
+type, and it means a reader can tell what kind of statement they are looking at
+before reading a word of it. The wordmark states the system in two words:
+"Website" in the measuring face, *Roaster* in the judging one.
+
+Monospace shrank to the strings a reader might copy literally — URLs, finding
+ids, header values. It had been carrying small data labels too, which is one of
+the reliable tells of generated design and was setting an impact line and a URL
+identically despite their being nothing alike.
+
+There is still no brand colour. The grade is published to the page as `--tone`
+and the light behind the score numeral takes it, so a failing page is washed red
+and a passing one green: the product's accent is the verdict. A saffron accent
+was tried and rejected for being a neighbour of the `fair` amber — a control
+that looks like a warning is a control that lies.
+
+Two defects were found by building and looking, which is the method Phase 17 and
+Phase 18 established and the only one that catches this class of problem. The
+grade letter hung well above the numeral it belonged to, because a display face
+at 9rem with a crushed line-height overflows its own line box and `items-end`
+aligns the box rather than the glyphs; baseline alignment fixed it and reads
+better besides. And Poppins at weight 300 was too thin to hold small text on a
+dark ground.
+
 New decisions are appended immediately above this section, using the form:
 
 ```text
@@ -4241,4 +4384,3 @@ Decision
 Reason
 Alternatives considered
 Consequences
-```

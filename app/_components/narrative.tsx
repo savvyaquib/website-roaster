@@ -30,22 +30,23 @@ export function Interpretation({
   }
 
   return (
-    <div className="space-y-8">
-      <p className="max-w-[62ch] text-base leading-7">
+    <div className="space-y-9">
+      {/* An essay, so it is set like one: reading size, generous leading. */}
+      <p className="max-w-[60ch] text-[1.05rem] leading-8">
         {interpretation.executiveSummary}
       </p>
 
       {interpretation.problems.length === 0 ? null : (
         <div>
-          <h3 className="text-sm font-semibold">What to deal with first</h3>
-          <ol className="mt-3 space-y-4">
+          <h3 className="display text-lg">What to deal with first</h3>
+          <ol className="mt-4 space-y-5">
             {interpretation.problems.map((problem) => (
               <li key={problem.finding.id} className="max-w-[68ch]">
                 <p className="text-sm leading-6">{problem.whyItMatters}</p>
-                <p className="mt-1 border-l-2 border-rule-strong py-0.5 pl-4 text-sm leading-6">
+                <p className="mt-2 rounded-r-md border-l-2 border-ink/30 bg-paper-deep/60 py-2.5 pr-4 pl-4 text-sm leading-6">
                   {problem.recommendation}
                 </p>
-                <p className="mt-1 font-mono text-xs text-ink-muted">
+                <p className="mt-1.5 font-mono text-xs text-ink-muted opacity-80">
                   {problem.finding.id}
                 </p>
               </li>
@@ -56,12 +57,12 @@ export function Interpretation({
 
       {interpretation.strengths.length === 0 ? null : (
         <div>
-          <h3 className="text-sm font-semibold">What is working</h3>
-          <ul className="mt-3 space-y-3">
+          <h3 className="display text-lg">What is working</h3>
+          <ul className="mt-4 space-y-4">
             {interpretation.strengths.map((strength) => (
               <li key={strength.finding.id} className="max-w-[68ch]">
                 <p className="text-sm leading-6">{strength.whyItHelps}</p>
-                <p className="mt-1 font-mono text-xs text-ink-muted">
+                <p className="mt-1.5 font-mono text-xs text-ink-muted opacity-80">
                   {strength.finding.id}
                 </p>
               </li>
@@ -70,7 +71,7 @@ export function Interpretation({
         </div>
       )}
 
-      <p className="font-mono text-xs text-ink-muted">
+      <p className="max-w-[62ch] border-t border-rule pt-4 text-xs leading-5 text-ink-muted">
         Written by {interpretation.meta.provider}/{interpretation.meta.model} from the
         findings above. Every claim was checked against them before it was shown.
       </p>
@@ -82,9 +83,10 @@ export function Interpretation({
  * The roast.
  *
  * Phase 15 stores each line as an observation and a punchline with different
- * authors, and the typography says so: the fact in mono, the joke in sans at
- * reading size. It is the only place in the interface where prose is set larger
- * than the data.
+ * authors, and the typography says so — but the joke goes first now. It is set
+ * in the display face at the largest reading size in the product, with the
+ * observation underneath as the receipt, so the line lands and then proves
+ * itself. That order is the whole product in miniature: a verdict you can check.
  */
 export function RoastPanel({ roast }: { roast: Roast }) {
   if (roast.lines.length === 0) {
@@ -93,20 +95,21 @@ export function RoastPanel({ roast }: { roast: Roast }) {
 
   return (
     <div>
-      <ol className="space-y-8">
+      <ol className="space-y-9">
         {roast.lines.map((line) => (
-          <li key={line.finding.id} className="max-w-[58ch]">
-            <p className="font-mono text-xs leading-5 text-ink-muted">
-              {line.observation}
-            </p>
-            <p className="mt-2 text-xl leading-8 font-medium tracking-tight">
+          <li
+            key={line.finding.id}
+            className="max-w-[54ch] border-l-2 border-rule-strong pl-5 sm:pl-7"
+          >
+            <p className="display text-[1.3rem] leading-[1.45] sm:text-[1.55rem]">
               {line.punchline}
             </p>
+            <p className="mt-3 text-xs leading-5 text-ink-muted">{line.observation}</p>
           </li>
         ))}
       </ol>
 
-      <p className="mt-8 font-mono text-xs text-ink-muted">
+      <p className="mt-9 max-w-[62ch] border-t border-rule pt-4 text-xs leading-5 text-ink-muted">
         {roast.source === "ai"
           ? "Written from the findings above."
           : `Written from the findings above, without AI. ${roast.fallbackReason ?? ""}`}

@@ -86,10 +86,10 @@ export default async function AnalysisPage({ params }: PageProps<"/a/[id]">) {
 
       <main className="flex-1">
         <Shell>
-          <div className="border-b border-rule py-6">
-            <h1 className="font-mono text-lg break-all">{host}</h1>
+          <div className="border-b border-rule py-7">
+            <h1 className="display text-2xl break-all sm:text-[2rem]">{host}</h1>
             {job.url === null ? null : (
-              <p className="mt-1 font-mono text-xs break-all text-ink-muted">{job.url}</p>
+              <p className="mt-2 font-mono text-xs break-all text-ink-muted">{job.url}</p>
             )}
           </div>
 
@@ -136,13 +136,13 @@ function FailureView({ job }: { job: AnalysisJob }) {
 
   return (
     <div className="py-16">
-      <h2 className="text-2xl font-semibold tracking-tight">{copy.heading}</h2>
-      <p className="mt-2 max-w-[62ch] text-ink-muted">{copy.detail}</p>
+      <h2 className="display text-3xl sm:text-4xl">{copy.heading}</h2>
+      <p className="mt-3 max-w-[62ch] leading-7 text-ink-muted">{copy.detail}</p>
 
       {job.error === null ? null : (
-        <div className="mt-6 max-w-[62ch] border-l-2 border-poor py-1 pl-4">
-          <p className="text-sm">{job.error.message}</p>
-          <p className="mt-1 font-mono text-xs text-ink-muted">{job.error.code}</p>
+        <div className="mt-7 max-w-[62ch] rounded-r-md border-l-2 border-poor bg-poor-soft/40 py-3 pr-4 pl-4">
+          <p className="text-sm leading-6">{job.error.message}</p>
+          <p className="mt-1.5 font-mono text-xs text-ink-muted">{job.error.code}</p>
         </div>
       )}
 
@@ -152,7 +152,7 @@ function FailureView({ job }: { job: AnalysisJob }) {
 
       <Link
         href="/"
-        className="mt-6 inline-block rounded-[3px] bg-ink px-5 py-2.5 text-sm font-medium text-paper hover:opacity-90"
+        className="mt-8 inline-block rounded-lg bg-ink px-6 py-3 text-sm font-medium text-paper transition-opacity hover:opacity-85"
       >
         Try another address
       </Link>
@@ -243,7 +243,10 @@ function Report({
             be read properly rather than that everything is wrong.
           </Empty>
         ) : (
-          <div>
+          // Twenty-odd passing checks stacked in one column is a wall of
+          // sameness that buries the few rows a reader came for. Two columns
+          // halve the scroll without hiding anything.
+          <div className="sm:grid sm:grid-cols-2 sm:gap-x-10">
             {strengths.map((finding) => (
               <StrengthRow key={finding.id} finding={finding} />
             ))}
@@ -313,15 +316,18 @@ function Report({
         <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
           <Datum
             label="Final URL"
-            value={<span className="break-all">{report.finalUrl}</span>}
+            plain
+            value={<span className="font-mono break-all">{report.finalUrl}</span>}
           />
           <Datum label="Scoring version" value={score.scoringVersion} />
           <Datum
             label="Analyzed"
+            plain
             value={new Date(job.createdAt).toISOString().slice(0, 16).replace("T", " ")}
           />
           <Datum
             label="Not run"
+            plain
             value={report.notRun.length === 0 ? "none" : report.notRun.join(", ")}
           />
         </dl>

@@ -12,31 +12,50 @@ import type { Evidence, Finding } from "@/lib/types/finding";
 import {
   categoryLabel,
   severityLabel,
+  SOFT_TONE,
   statusLabel,
   TEXT_TONE,
   toneForSeverity,
 } from "@/lib/ui/format";
+
+/** The disclosure marker, drawn rather than fetched. */
+function Chevron() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 8 10"
+      className="disclosure mt-[0.3rem] h-2.5 w-2 shrink-0 fill-current text-rule-strong"
+    >
+      <path d="M0 0l8 5-8 5z" />
+    </svg>
+  );
+}
 
 /**
  * One observation.
  *
  * `measured` and `heuristic` are marked differently because ADR-009 forbids
  * presenting an inference as a fact, and a reader deciding whether to trust a
- * line needs to know which one they are reading.
+ * line needs to know which one they are reading. An inference is set in italic:
+ * the same distinction a newspaper makes between a report and a comment.
  */
 function EvidenceItem({ item }: { item: Evidence }) {
+  const inferred = item.kind !== "measured";
+
   return (
-    <li className="border-l-2 border-rule py-0.5 pl-3">
-      <p className="text-sm">{item.summary}</p>
-      <p className="mt-0.5 font-mono text-xs text-ink-muted">
-        {item.kind === "measured" ? "measured" : "inferred"} from {item.source}
-        {item.detail === undefined ? null : (
-          <>
-            {" · "}
-            <span className="break-all">{item.detail}</span>
-          </>
-        )}
+    <li className="border-l border-rule py-0.5 pl-4">
+      <p className="text-sm leading-6">{item.summary}</p>
+      <p className="mt-0.5 text-xs text-ink-muted">
+        <span className={inferred ? "italic" : ""}>
+          {inferred ? "inferred" : "measured"}
+        </span>{" "}
+        from {item.source}
       </p>
+      {item.detail === undefined ? null : (
+        <p className="mt-1 font-mono text-xs break-all text-ink-muted opacity-80">
+          {item.detail}
+        </p>
+      )}
     </li>
   );
 }
@@ -50,13 +69,21 @@ function Marker({ finding }: { finding: Finding }) {
   const showSeverity = finding.status === "fail" || finding.status === "warn";
 
   return (
-    <span
-      className={`font-mono text-xs whitespace-nowrap ${showSeverity ? TEXT_TONE[tone] : "text-ink-muted"}`}
-    >
-      {statusLabel(finding.status)}
+    <span className="flex shrink-0 items-baseline gap-2.5">
       {showSeverity ? (
-        <span className="text-ink-muted"> / {severityLabel(finding.severity)}</span>
+        <span className="hidden text-xs text-ink-muted sm:inline">
+          {severityLabel(finding.severity)}
+        </span>
       ) : null}
+      <span
+        className={`rounded-full px-2.5 py-0.5 text-xs whitespace-nowrap ${
+          showSeverity
+            ? `${SOFT_TONE[tone]} ${TEXT_TONE[tone]}`
+            : "bg-paper-deep text-ink-muted"
+        }`}
+      >
+        {statusLabel(finding.status)}
+      </span>
     </span>
   );
 }
@@ -74,35 +101,38 @@ export function FindingRow({
   children?: React.ReactNode;
 }) {
   return (
-    <details className="group border-b border-rule py-3 last:border-b-0">
-      <summary className="flex cursor-pointer list-none items-baseline gap-3">
+    <details className="group border-b border-rule last:border-b-0">
+      <summary className="-mx-3 flex cursor-pointer list-none items-baseline gap-3 rounded-md px-3 py-3.5 hover:bg-paper-deep/50">
+        <Chevron />
         {rank === undefined ? null : (
-          <span className="tabular w-5 shrink-0 font-mono text-sm text-ink-muted">
+          <span className="tabular display w-5 shrink-0 text-base text-ink-muted">
             {rank}
           </span>
         )}
-        <span className="flex-1 text-sm font-medium group-open:underline">{title}</span>
+        <span className="flex-1 text-sm leading-6 font-medium">{title}</span>
         <Marker finding={finding} />
       </summary>
 
-      <div className={`mt-3 space-y-3 ${rank === undefined ? "" : "pl-8"}`}>
-        <p className="max-w-[68ch] text-sm text-ink-muted">{finding.explanation}</p>
+      <div className={`space-y-4 pb-5 ${rank === undefined ? "pl-5" : "pl-5 sm:pl-11"}`}>
+        <p className="max-w-[68ch] text-sm leading-6 text-ink-muted">
+          {finding.explanation}
+        </p>
 
         {children}
 
         <div>
-          <p className="mb-1.5 text-xs text-ink-muted">
+          <p className="mb-2 text-xs text-ink-muted">
             What was observed ({finding.evidence.length})
           </p>
-          <ul className="space-y-1.5">
+          <ul className="space-y-2.5">
             {finding.evidence.map((item, index) => (
               <EvidenceItem key={`${finding.id}-${index}`} item={item} />
             ))}
           </ul>
         </div>
 
-        <p className="font-mono text-xs text-ink-muted">
-          {finding.id} · {categoryLabel(finding.category)}
+        <p className="font-mono text-xs text-ink-muted opacity-80">
+          {finding.id} — {categoryLabel(finding.category)}
         </p>
       </div>
     </details>
@@ -120,16 +150,16 @@ export function RecommendationRow({
   return (
     <FindingRow finding={finding} title={recommendation.title} rank={recommendation.rank}>
       {finding.recommendation === undefined ? null : (
-        <p className="max-w-[68ch] border-l-2 border-rule-strong py-0.5 pl-4 text-sm">
+        <p className="max-w-[68ch] rounded-r-md border-l-2 border-ink/30 bg-paper-deep/60 py-2.5 pr-4 pl-4 text-sm leading-6">
           {finding.recommendation}
         </p>
       )}
 
-      <p className="font-mono text-xs text-ink-muted">
+      <p className="text-xs text-ink-muted">
         {impact.level} impact
         {impact.points === null
-          ? " · score effect cannot be priced from a finding"
-          : ` · fixing it returns ${impact.points} point${impact.points === 1 ? "" : "s"}`}
+          ? " — score effect cannot be priced from a finding"
+          : ` — fixing it returns ${impact.points} point${impact.points === 1 ? "" : "s"}`}
       </p>
     </FindingRow>
   );

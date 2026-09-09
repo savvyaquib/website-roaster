@@ -21,8 +21,8 @@ export default function GlobalError({
   return (
     <main className="flex-1">
       <div className="mx-auto w-full max-w-3xl px-5 py-16 sm:px-8">
-        <h1 className="text-2xl font-semibold tracking-tight">This page did not load</h1>
-        <p className="mt-2 max-w-[62ch] text-ink-muted">
+        <h1 className="display text-3xl sm:text-4xl">This page did not load</h1>
+        <p className="mt-3 max-w-[62ch] leading-7 text-ink-muted">
           Something failed while rendering. Trying again often works; if it does not, the
           reference below will be in the server log.
         </p>
@@ -31,7 +31,7 @@ export default function GlobalError({
           <button
             type="button"
             onClick={reset}
-            className="rounded-[3px] bg-ink px-5 py-2.5 text-sm font-medium text-paper hover:opacity-90"
+            className="rounded-lg bg-ink px-6 py-3 text-sm font-medium text-paper transition-opacity hover:opacity-85"
           >
             Try again
           </button>
