@@ -1,24 +1,26 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
+import { Playfair_Display, Poppins } from "next/font/google";
 import "./globals.css";
 
 /**
- * One superfamily, two roles.
+ * Two families, two jobs.
  *
- * Plex Sans carries prose. Plex Mono carries measured values, finding
- * identifiers and header strings — the things a reader might copy, compare or
- * paste into a terminal. Mono is never used as decoration.
+ * Playfair Display carries **judgement**: the score, the section headings, the
+ * roast. Poppins carries **measurement**: evidence, labels, identifiers, every
+ * number that came from the page. The split is the design — a reader can tell
+ * at a glance whether they are looking at a verdict or at a fact.
  */
-const plexSans = IBM_Plex_Sans({
-  variable: "--font-plex-sans",
+const playfair = Playfair_Display({
+  variable: "--font-display",
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
+  style: ["normal", "italic"],
+  weight: ["400", "500", "600", "700"],
 });
 
-const plexMono = IBM_Plex_Mono({
-  variable: "--font-plex-mono",
+const poppins = Poppins({
+  variable: "--font-sans",
   subsets: ["latin"],
-  weight: ["400", "500"],
+  weight: ["300", "400", "500", "600"],
 });
 
 export const metadata: Metadata = {
@@ -31,7 +33,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${plexSans.variable} ${plexMono.variable} h-full antialiased`}
+      className={`${playfair.variable} ${poppins.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col">{children}</body>
     </html>
