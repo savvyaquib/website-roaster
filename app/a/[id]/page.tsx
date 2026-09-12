@@ -27,7 +27,7 @@ import { Interpretation, RoastPanel, Screenshots } from "../../_components/narra
 import { Datum, Empty, Masthead, Section, Shell } from "../../_components/primitives";
 import { ProgressView } from "../../_components/progress";
 import { ShareBar } from "../../_components/share-bar";
-import { CategoryBar, OverallScore } from "../../_components/score-scale";
+import { CategoryChart, OverallScore } from "../../_components/score-scale";
 
 /** How many ranked problems the report leads with before the full list. */
 const TOP_ISSUE_COUNT = 5;
@@ -201,17 +201,14 @@ function Report({
         title="Category scores"
         description="Every category on the same scale, so they can be compared by eye. The marks are where the grade changes."
       >
-        <div className="space-y-4">
-          {score.categories.map((category) => (
-            <CategoryBar
-              key={category.category}
-              label={categoryLabel(category.category)}
-              score={category.score}
-              grade={category.grade}
-              notAssessedReason={category.notAssessedReason}
-            />
-          ))}
-        </div>
+        <CategoryChart
+          rows={score.categories.map((category) => ({
+            label: categoryLabel(category.category),
+            score: category.score,
+            grade: category.grade,
+            notAssessedReason: category.notAssessedReason,
+          }))}
+        />
       </Section>
 
       <Section

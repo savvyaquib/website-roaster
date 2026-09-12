@@ -3793,6 +3793,41 @@ they read as a surface rather than as an empty div.
   the other reliable signal of generated design. Structure still comes from
   rules and space.
 
+### Second pass: the category chart and the numbered list
+
+After the first pass shipped, two sections still read as a dashboard: category
+scores and the finding rows. The user pointed at both.
+
+**Category scores was seven separate progress bars.** Each row had its own
+rounded track, three of them hatched with a two-line explanation underneath, so
+the section was half chart and half interruption. It is now one chart: a field
+with the 0 and 100 edges drawn, the four grade boundaries running as gridlines
+through every row, the axis labelled once at the top, and square-ended bars laid
+on the field rather than inside their own tracks. The rows join the chart's
+columns with `display: contents`, so nothing can drift.
+
+Categories that were not scored are grouped below the chart rather than
+interleaved. Interleaved, each one broke the comparison the chart exists to
+make; grouped, they read as the footnote they are. There is no bar for them at
+all — a full-width empty track was a chart with nothing in it — only a hatched
+swatch beside the reason, so "not scored" keeps a mark the scored rows never
+carry.
+
+One layout mistake is worth recording. Declaring the `n/a` cell before the
+reason, so it would land on the label's row on every breakpoint, silently broke
+the wide layout: grid auto-placement's cursor moves *down* a row when an item's
+definite column is lower than the cursor's, so the reason dropped a row and the
+next label landed in column 3. The fix is that DOM order matches column order on
+wide screens, and on a phone each unscored row is a small grid of its own.
+
+**The finding rows were a stock accordion** — chevron, number, title, a word
+and a pill. They are now set like an index: a rule down the left edge in the
+severity's colour, a Playfair numeral for the rank, the title, and the outcome
+as two plain lines of text on the right. No pill. The disclosure marker is a
+typographic `+` that becomes `−`, because a chevron reads as a widget. The
+numbering is earned — the list is ranked — which is the test the
+frontend-design guidance sets for numbered markers.
+
 ## Consequences
 
 - Two Google font families are loaded where two were loaded before. Playfair is
@@ -4374,6 +4409,13 @@ at 9rem with a crushed line-height overflows its own line box and `items-end`
 aligns the box rather than the glyphs; baseline alignment fixed it and reads
 better besides. And Poppins at weight 300 was too thin to hold small text on a
 dark ground.
+
+A second pass, after the user pointed at the category scores and the finding
+rows as still reading like a dashboard: the seven progress bars became one chart
+with a shared axis and gridlines, with the unscored categories grouped below as
+a footnote and no empty bars; and the accordion rows became a numbered index
+with a severity-coloured rule, a Playfair rank and the outcome in plain words.
+Recorded under ADR-063's "Second pass".
 
 New decisions are appended immediately above this section, using the form:
 

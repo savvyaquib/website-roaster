@@ -12,22 +12,28 @@ import type { Evidence, Finding } from "@/lib/types/finding";
 import {
   categoryLabel,
   severityLabel,
-  SOFT_TONE,
   statusLabel,
   TEXT_TONE,
   toneForSeverity,
+  TRACK_TONE,
 } from "@/lib/ui/format";
 
-/** The disclosure marker, drawn rather than fetched. */
-function Chevron() {
+/**
+ * The disclosure marker: a plus that becomes a minus.
+ *
+ * Typographic rather than iconographic, because the rows are set like an
+ * index and a chevron reads like a widget. Both glyphs are always in the
+ * markup; CSS shows one.
+ */
+function Toggle() {
   return (
-    <svg
+    <span
       aria-hidden="true"
-      viewBox="0 0 8 10"
-      className="disclosure mt-[0.3rem] h-2.5 w-2 shrink-0 fill-current text-rule-strong"
+      className="w-4 shrink-0 self-start pt-0.5 text-right text-lg leading-none text-rule-strong select-none group-hover:text-ink-muted"
     >
-      <path d="M0 0l8 5-8 5z" />
-    </svg>
+      <span className="group-open:hidden">+</span>
+      <span className="hidden group-open:inline">−</span>
+    </span>
   );
 }
 
@@ -60,32 +66,47 @@ function EvidenceItem({ item }: { item: Evidence }) {
   );
 }
 
-function Marker({ finding }: { finding: Finding }) {
-  const tone = toneForSeverity(finding.severity);
-
+/** Whether a finding's severity is worth printing: only when something went wrong. */
+function severityShown(finding: Finding): boolean {
   // Severity is only meaningful for something that went wrong. Printing
   // "Passed / Info" beside seventeen passing checks is noise that makes the
   // handful of real problems harder to pick out.
-  const showSeverity = finding.status === "fail" || finding.status === "warn";
+  return finding.status === "fail" || finding.status === "warn";
+}
+
+/**
+ * The outcome, in words, at the end of the row.
+ *
+ * Two short lines rather than a pill: the status, and under it the severity
+ * when there is one. Colour repeats what the words say and never replaces it.
+ */
+function Outcome({ finding }: { finding: Finding }) {
+  const tone = toneForSeverity(finding.severity);
+  const showSeverity = severityShown(finding);
 
   return (
-    <span className="flex shrink-0 items-baseline gap-2.5">
-      {showSeverity ? (
-        <span className="hidden text-xs text-ink-muted sm:inline">
-          {severityLabel(finding.severity)}
-        </span>
-      ) : null}
-      <span
-        className={`rounded-full px-2.5 py-0.5 text-xs whitespace-nowrap ${
-          showSeverity
-            ? `${SOFT_TONE[tone]} ${TEXT_TONE[tone]}`
-            : "bg-paper-deep text-ink-muted"
-        }`}
-      >
+    <span className="shrink-0 self-start text-right text-xs leading-5">
+      <span className={`block ${showSeverity ? TEXT_TONE[tone] : "text-ink-muted"}`}>
         {statusLabel(finding.status)}
       </span>
+      {showSeverity ? (
+        <span className="block text-ink-muted">{severityLabel(finding.severity)}</span>
+      ) : null}
     </span>
   );
+}
+
+/**
+ * The rule down a row's left edge carries its severity.
+ *
+ * The one place colour leads: a reader scanning the list sees where the red is
+ * before reading a word. Rows that passed get the rule in the paper's own
+ * colour so they recede.
+ */
+function edgeClass(finding: Finding): string {
+  return severityShown(finding)
+    ? TRACK_TONE[toneForSeverity(finding.severity)]
+    : "bg-rule";
 }
 
 /** A finding with its evidence folded away. */
@@ -100,20 +121,31 @@ export function FindingRow({
   rank?: number;
   children?: React.ReactNode;
 }) {
+  const ranked = rank !== undefined;
+
   return (
     <details className="group border-b border-rule last:border-b-0">
-      <summary className="-mx-3 flex cursor-pointer list-none items-baseline gap-3 rounded-md px-3 py-3.5 hover:bg-paper-deep/50">
-        <Chevron />
-        {rank === undefined ? null : (
-          <span className="tabular display w-5 shrink-0 text-base text-ink-muted">
+      <summary className="flex cursor-pointer list-none items-baseline gap-4 py-4">
+        <span
+          aria-hidden="true"
+          className={`w-[3px] shrink-0 self-stretch rounded-full ${edgeClass(finding)}`}
+        />
+        {ranked ? (
+          <span className="tabular display w-6 shrink-0 text-2xl leading-none text-ink-muted">
             {rank}
           </span>
-        )}
-        <span className="flex-1 text-sm leading-6 font-medium">{title}</span>
-        <Marker finding={finding} />
+        ) : null}
+        <span className="flex-1 text-[0.95rem] leading-6 font-medium group-hover:underline group-hover:decoration-rule-strong group-hover:underline-offset-4">
+          {title}
+        </span>
+        <Outcome finding={finding} />
+        <Toggle />
       </summary>
 
-      <div className={`space-y-4 pb-5 ${rank === undefined ? "pl-5" : "pl-5 sm:pl-11"}`}>
+      {/* Aligned with the title: past the rule, the gap and, if there is one, the rank. */}
+      <div
+        className={`space-y-4 pb-6 ${ranked ? "pl-[19px] sm:pl-[59px]" : "pl-[19px]"}`}
+      >
         <p className="max-w-[68ch] text-sm leading-6 text-ink-muted">
           {finding.explanation}
         </p>

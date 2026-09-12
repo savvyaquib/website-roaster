@@ -10,9 +10,9 @@
  * product, with a wash behind it in the colour of the grade — so the first
  * impression of a report is the verdict, at a glance, from across the room.
  *
- * A category that was not assessed gets a visibly empty track and the words
- * "not assessed" — never a zero, and never a gap where a bar should be
- * (ADR-021, ADR-036).
+ * A category that was not assessed gets a hatched swatch and the words
+ * "not assessed" beside its reason — never a zero, and never a bar that is
+ * silently empty (ADR-021, ADR-036).
  */
 
 import type { Grade } from "@/lib/scoring";
@@ -118,65 +118,171 @@ export function OverallScore({
   );
 }
 
-/** One category, on the same scale as every other. */
-export function CategoryBar({
-  label,
-  score,
-  grade,
-  notAssessedReason,
-}: {
-  label: string;
-  score: number | null;
-  grade: Grade | null;
-  notAssessedReason: string | null;
-}) {
-  const tone = toneForScore(score);
-  const assessed = score !== null;
+/**
+ * The chart's column template. One definition, used by the chart body, the
+ * axis and the gridline overlay, so the three can never disagree about where
+ * the track column starts and ends.
+ */
+const CHART_COLUMNS =
+  "grid-cols-[6rem_1fr_3.25rem] gap-x-3 sm:grid-cols-[8.5rem_1fr_4.5rem] sm:gap-x-4";
+
+/** Where the track column sits, for the overlay that draws through every row. */
+const TRACK_INSET =
+  "left-[calc(6rem+0.75rem)] right-[calc(3.25rem+0.75rem)] sm:left-[calc(8.5rem+1rem)] sm:right-[calc(4.5rem+1rem)]";
+
+export interface CategoryRow {
+  readonly label: string;
+  readonly score: number | null;
+  readonly grade: Grade | null;
+  readonly notAssessedReason: string | null;
+}
+
+/**
+ * Every category on one chart.
+ *
+ * Seven separate progress bars are a dashboard widget; one field with the
+ * grade boundaries drawn through every row is a chart. The axis is labelled
+ * once, the gridlines run behind every bar, and the bars are drawn on the
+ * field rather than inside their own little tracks, so a reader compares
+ * categories against the same four lines the overall score uses.
+ *
+ * Categories that were not scored are set apart below the chart rather than
+ * interleaved with it. Interleaved, each one interrupted the comparison with a
+ * two-line explanation; grouped, the explanations read as the footnote they
+ * are, and the chart above is only what was measured (ADR-021, ADR-036).
+ */
+export function CategoryChart({ rows }: { rows: readonly CategoryRow[] }) {
+  const scored = rows.filter((row) => row.score !== null);
+  const unscored = rows.filter((row) => row.score === null);
 
   return (
-    <div className="grid grid-cols-[7rem_1fr_3.5rem] items-center gap-x-4 gap-y-1.5 sm:grid-cols-[9rem_1fr_4.5rem]">
-      <span className="text-sm font-medium">{label}</span>
+    <div>
+      {scored.length === 0 ? null : (
+        <div className="relative isolate">
+          {/* The field: the 0 and 100 edges, and the four grade boundaries. */}
+          <div
+            aria-hidden="true"
+            className={`pointer-events-none absolute inset-y-0 -z-10 border-x border-rule ${TRACK_INSET}`}
+          >
+            {BAND_MARKS.map((band) => (
+              <span
+                key={band.grade}
+                className="absolute top-0 bottom-0 w-px bg-rule"
+                style={{ left: `${band.at}%` }}
+              />
+            ))}
+          </div>
 
-      <div
-        role="img"
-        aria-label={
-          assessed
-            ? `${label}: ${score} out of 100, grade ${grade}.`
-            : `${label}: not assessed. ${notAssessedReason ?? ""}`
-        }
-        className="relative h-1.5 w-full overflow-hidden rounded-full bg-paper-deep"
-      >
-        {assessed ? (
-          <div
-            className={`h-full rounded-full ${TRACK_TONE[tone]}`}
-            style={{ width: `${Math.max(score, 1)}%` }}
-          />
-        ) : (
-          // A hatched track, so "not assessed" is visibly different from zero.
-          <div
-            className="h-full w-full opacity-70"
+          <div className={`grid items-center gap-y-5 ${CHART_COLUMNS}`}>
+            {/* The axis, once. */}
+            <span />
+            <div className="relative h-4" aria-hidden="true">
+              {BAND_MARKS.map((band) => (
+                <span
+                  key={band.grade}
+                  className="tabular absolute -translate-x-1/2 text-[10px] text-ink-muted sm:text-[11px]"
+                  style={{ left: `${band.at}%` }}
+                >
+                  {band.at}
+                </span>
+              ))}
+            </div>
+            <span />
+
+            {scored.map((row) => (
+              <CategoryBar key={row.label} {...row} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {unscored.length === 0 ? null : (
+        <div
+          className={`${scored.length === 0 ? "" : "mt-8 border-t border-rule pt-6"} grid items-start gap-y-3 ${CHART_COLUMNS}`}
+        >
+          {unscored.map((row) => (
+            <CategoryBar key={row.label} {...row} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * One category, as a row of the chart.
+ *
+ * Renders its cells straight into the parent grid (`display: contents`), so
+ * every row shares the chart's columns and the bars line up against the same
+ * gridlines. It carries no layout of its own.
+ */
+export function CategoryBar({ label, score, grade, notAssessedReason }: CategoryRow) {
+  if (score === null) {
+    /*
+     * Two layouts from one DOM.
+     *
+     * On a wide screen the wrapper is `display: contents` and the three cells
+     * join the chart's columns in DOM order — label, reason, n/a — which is
+     * also column order, so auto-placement keeps them on one row. (Placing
+     * n/a before the reason looked harmless and was not: a definite column
+     * *lower* than the cursor's moves the cursor down a row, so the reason
+     * dropped below and the next label landed in column 3.)
+     *
+     * On a phone the wrapper is a small grid of its own spanning the chart:
+     * label and n/a on one line, the reason on the next.
+     */
+    return (
+      <div className="col-span-3 grid grid-cols-[1fr_auto] items-baseline gap-x-4 gap-y-1 sm:contents">
+        <span className="order-1 text-[13px] leading-5 font-medium text-ink-muted sm:order-0 sm:text-sm">
+          {label}
+        </span>
+
+        {/*
+          There is no bar, because there is no measurement — a full-width empty
+          track read as a chart with nothing in it. The hatch survives as a
+          swatch, so "not scored" keeps the mark the scored rows never carry.
+        */}
+        <p className="order-3 col-span-2 max-w-[62ch] text-xs leading-5 text-ink-muted sm:order-0 sm:col-span-1 sm:col-start-2">
+          <span
+            aria-hidden="true"
+            className="mr-2 inline-block h-2.5 w-7 align-[-1px] opacity-70"
             style={{
               backgroundImage:
                 "repeating-linear-gradient(135deg, var(--rule-strong) 0 2px, transparent 2px 6px)",
             }}
           />
-        )}
+          Not assessed. {notAssessedReason}
+        </p>
+
+        <span className="tabular display order-2 text-right text-base leading-5 text-unknown sm:order-0 sm:col-start-3">
+          n/a
+        </span>
+      </div>
+    );
+  }
+
+  const tone = toneForScore(score);
+
+  return (
+    <div className="contents">
+      <span className="text-[13px] leading-5 font-medium sm:text-sm">{label}</span>
+
+      <div
+        role="img"
+        aria-label={`${label}: ${score} out of 100, grade ${grade}.`}
+        className="relative h-3 w-full"
+      >
+        <div
+          className={`h-full rounded-r-xs ${TRACK_TONE[tone]}`}
+          style={{ width: `${Math.max(score, 1)}%` }}
+        />
       </div>
 
       <span
-        className={`tabular display text-right text-base ${assessed ? TEXT_TONE[tone] : "text-unknown"}`}
+        className={`tabular display text-right text-xl leading-none ${TEXT_TONE[tone]}`}
       >
-        {assessed ? `${score} ${grade}` : "n/a"}
+        {`${score} ${grade}`}
       </span>
-
-      {assessed ? null : (
-        // Full width on a phone: squeezed into the bar's column it becomes a
-        // four-words-per-line ribbon, and this sentence is the whole point of
-        // showing an unassessed category at all.
-        <p className="col-span-3 max-w-[62ch] text-xs leading-5 text-ink-muted sm:col-span-2 sm:col-start-2 sm:-mt-1">
-          Not assessed. {notAssessedReason}
-        </p>
-      )}
     </div>
   );
 }

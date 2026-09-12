@@ -1933,6 +1933,16 @@ crushed line-height overflows its own line box and `items-end` aligns the box
 rather than the glyphs; and Poppins at weight 300 was too thin for small text on
 a dark ground.
 
+Second pass (same ADR, "Second pass" section): the category scores became one
+chart — shared axis, gridlines through every row, square-ended bars on a field,
+unscored categories grouped below with a hatched swatch and no empty bar — and
+the finding rows became a numbered index with a severity-coloured left rule, a
+Playfair rank, the outcome in two plain lines and a typographic `+`/`−`
+disclosure. `CategoryChart` is new in `app/_components/score-scale.tsx`;
+`CategoryBar` now renders into the chart's grid with `display: contents`. A grid
+auto-placement mistake — a definite column lower than the cursor moves the
+cursor down a row — was caught by looking at the desktop render.
+
 Known limitation: the share card still renders in the Satori runtime's built-in
 face, for ADR-059's reason — Satori needs font data and the only font files on
 disk are hashed build artifacts. Its palette was updated to match; its typeface
