@@ -199,11 +199,3 @@ body::after {
 .sweep {
   animation: sweep 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
-
-/* A disclosure marker that rotates, drawn in CSS rather than shipped as an icon. */
-.disclosure {
-  transition: transform 160ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-details[open] > summary .disclosure {
-  transform: rotate(90deg);
-}
